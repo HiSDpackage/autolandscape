@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.autolandscape.win http://127.0.0.1:8787; img-src 'self' blob:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<title>AutoLandscape · 解景观计算工作台</title><link rel="stylesheet" href="./style.css"></head>
+<body>
+<header><a class="brand" href="./">AutoLandscape<span>SaddleScape 交互式计算工作台</span></a><div class="head-right"><span id="connection" class="pill">未连接</span><a href="https://hisdpackage.github.io/saddlescape/" target="_blank" rel="noopener">软件文档 ↗</a></div></header>
+<main>
+<section class="intro"><div><span class="eyebrow">RESEARCH WORKSPACE / 1.0</span><h1>从计算方案，到可检查的结果。</h1><p>选取模型 → 校内复核 → 你来确认 → SaddleScape 计算。不会自动重试。</p></div><div class="intro-note">计算留在 fat01<br>网页与服务器仅通过 HTTPS 交换任务</div></section>
+<section id="login-panel" class="card login"><div><h2>连接工作区</h2><p>使用管理员单独分配给你的用户令牌。令牌仅保存在当前页面内存中。</p></div><label>个人用户令牌<input id="token" type="password" autocomplete="off" placeholder="粘贴用户令牌；不要粘贴 fat01 或 AI 密钥"></label><button id="login">连接</button></section>
+<div id="message" role="status" aria-live="polite"></div>
+<section id="workspace" hidden>
+<div class="statusbar"><span id="user-label"></span><span id="worker-state">等待服务器信息</span><span id="refresh-info">页面刷新：5秒（任务活动时）</span><button id="refresh" class="quiet">立即刷新</button><button id="logout" class="quiet">退出</button></div>
+<div class="columns">
+<div class="left">
+<section class="card"><div class="section-title"><span class="step">01</span><div><h2>配置一个任务</h2><p>AI 尚未配置也能使用完整计算流程。</p></div></div>
+<label>审核模板<select id="template"></select></label><div class="button-row"><button id="load-template" class="quiet">载入模板</button><label class="upload">导入 JSON<input id="import" type="file" accept=".json,application/json"></label></div>
+<div id="basic-form" class="form-grid"><label>任务名称<input id="project-name" maxlength="120"></label><label>时间步长<input id="timestep" type="number" min="0.000000001" step="any"></label><label>目标指标<input id="target-index" type="number" min="0" step="1"></label><label>初始点（JSON 数组）<input id="initial-point"></label><label>最长计算时间（秒）<input id="walltime" type="number" min="1" max="3600"></label><label>内存上限（MB）<input id="memory" type="number" min="128" max="8192"></label><label>CPU 数量<input id="cpu" type="number" min="1" max="4"></label></div>
+<button id="sync-form" class="quiet">把上面修改写入 JSON</button>
+<details><summary>完整任务 JSON（高级编辑）</summary><p>最终发送下方 JSON；表单修改后请先点击“写入 JSON”。</p><textarea id="spec" spellcheck="false" rows="18"></textarea></details>
+<label>研究说明 / 需注意的假设<textarea id="description" rows="3" placeholder="描述目标。系统不会自行补充物理模型。"></textarea></label>
+<button id="prepare" class="primary full">发送给 fat01 复核方案，不开始计算</button><p class="small">待机每120秒取件；工作状态每5秒取件。待机时新任务可能等待约2分钟。</p>
+</section>
+<section class="card"><div class="section-title"><span class="step">AI</span><div><h2>配置助手 <span id="ai-badge" class="pill">未启用</span></h2><p>只能提供解释和建议，不能确认或运行任务。</p></div></div><div id="chat-log" class="chat-log"></div><textarea id="chat-input" rows="3" placeholder="AI 未启用时可先用模板。"></textarea><label class="check"><input type="checkbox" id="ai-consent">允许将本次对话发送给管理员配置的外部模型</label><button id="chat-send" class="quiet">发送给配置助手</button></section>
+</div>
+<div class="right">
+<section class="card"><div class="section-title"><span class="step">02</span><div><h2>我的任务</h2><p>仅显示当前用户的任务；最新50项。</p></div></div><div id="jobs" class="jobs"><p>尚无任务</p></div></section>
+<section class="card" id="detail-panel"><div class="section-title"><span class="step">03</span><div><h2>方案、状态与结果</h2><p id="detail-sub">选择一个任务查看</p></div></div>
+<div id="detail-empty">方案会由 fat01 按真实代码版本和资源限制生成。</div>
+<div id="detail" hidden><div class="task-title"><strong id="task-name"></strong><span id="task-status" class="pill"></span></div><p id="task-id" class="mono small"></p>
+<div class="metrics"><div><span>已运行</span><strong id="metric-time">—</strong></div><div><span>采样内存</span><strong id="metric-memory">—</strong></div><div><span>当前阶段</span><strong id="metric-phase">—</strong></div></div>
+<p id="freshness" class="small"></p><p id="live-detail" class="mono"></p><pre id="error" class="error-box" hidden></pre>
+<div id="approval" hidden><h3>请核对校内生成的完整方案</h3><div id="plan-summary"></div><details><summary>实际参数、版本与所有警告</summary><pre id="plan-json"></pre></details><p class="mono small" id="plan-hash"></p><label class="check"><input id="reviewed" type="checkbox">我已检查实际模型、参数、预算和代码版本，同意执行这一个任务。</label><button id="approve" class="primary">确认并排队计算</button></div>
+<div class="button-row"><button id="cancel" class="danger">请求取消</button><button id="copy" class="quiet">复制参数为新草案</button><button id="export-record" class="quiet">导出任务记录</button></div>
+<details open><summary>最近日志（计算中每5秒回传）</summary><pre id="log" class="log">等待状态回传</pre></details>
+<div id="result-block" hidden><h3>结果摘要</h3><pre id="result-summary"></pre><p class="notice">这是给定离散模型与阈值下的数值结果。搜索连接不自动等于物理转变路径，也不证明景观完整。</p><div id="figures"></div><h3>结果文件</h3><div id="files"></div><button id="download-bundle" class="quiet" hidden>下载完整结果包（自动合并分片）</button><h3>从已验证节点重新起算</h3><div class="form-grid"><label>节点<select id="restart-node"></select></label><label>扰动（JSON 数组）<input id="restart-perturbation" value="[0.01,0]"></label><label>目标指标<input id="restart-index" type="number" min="0" value="1"></label></div><button id="restart" class="quiet">生成新任务，重新复核与确认</button><p class="small">这是从驻点出发的新搜索，不是中断迭代的精确恢复，也不会自动合并旧景观。</p></div>
+<details><summary>审批与状态历史</summary><pre id="events"></pre></details></div></section>
+</div></div></section>
+<footer>AutoLandscape 1.0 · 私有令牌访问 · AI 默认关闭 · 所有重跑均需重新确认</footer>
+</main><script src="./config.js"></script><script src="./app.js"></script></body></html>

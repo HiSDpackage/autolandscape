@@ -1,0 +1,15 @@
+private_tokens/
+*.token
+.env
+.dev.vars
+cloudflare/wrangler.toml
+.wrangler/
+node_modules/
+fat01/config.json
+fat01/state/
+fat01/secrets/
+.venv/
+__pycache__/
+*.pyc
+*.tar
+*.pcap
