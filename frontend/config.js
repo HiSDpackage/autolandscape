@@ -3,5 +3,5 @@ window.AUTOLANDSCAPE_CONFIG = {
   apiBase: 'https://api.autolandscape.win',
   activeRefreshMs: 5000,
   idleRefreshMs: 30000,
-  requestTimeoutMs: 20000
+  requestTimeoutMs: 45000
 };
