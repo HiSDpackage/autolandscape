@@ -20,8 +20,8 @@ $('load-template').onclick=()=>{writeSpec(structuredClone(templates[$('template'
 $('import').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;if(f.size>30000)throw Error('仅允许30KB以内的任务 JSON');writeSpec(JSON.parse(await f.text()));notify('已导入草案，尚未提交。');}catch(x){notify(x.message,true);}e.target.value='';};
 $('login').onclick=()=>guarded($('login'),async()=>{token=$('token').value.trim();const me=await call('/v1/me');templates=await call('/v1/templates');$('template').replaceChildren();for(const [k,v] of Object.entries(templates)){const o=el('option',v.name);o.value=k;$('template').append(o);}writeSpec(structuredClone(Object.values(templates)[0].spec));$('token').value='';$('login-panel').hidden=true;$('workspace').hidden=false;$('user-label').textContent='用户：'+me.id;$('connection').textContent='API 已连接';$('ai-badge').textContent=me.ai_enabled?'已配置':'未启用';$('chat-input').placeholder = me.ai_enabled
   ? '描述你的系统、计算目标，或询问参数含义。'
-  : 'AI 未启用时可先用模板。';$('chat-send').disabled=!me.ai_enabled;$('chat-input').disabled=!me.ai_enabled;$('ai-context').disabled=!me.ai_enabled||me.ai_context_enabled!==true||me.ai_context_version!==2;aiDraftEnabled=me.ai_enabled&&me.ai_draft_enabled===true;$('ai-generate').disabled=!aiDraftEnabled;$('ai-context-note').textContent=me.ai_context_enabled===true&&me.ai_context_version===2?'勾选后附带发送时的模板选择和编辑框草案。表单修改请先写入 JSON。':'任务上下文需更新，请先部署第010项修正版后端。';notify(me.files_enabled?'已连接。可以提交模板并在确认后计算。':'已连接。R2 未绑定：能看结果摘要，但暂不能在线下载文件。');await refresh();});
-$('logout').onclick=()=>{epoch++;clearAIProposal();aiPending=false;aiDraftEnabled=false;$('ai-generate').disabled=true;token='';clearTimeout(timer);busy=false;selected=null;detail=null;jobs=[];templates={};draftKey=null;restartKey=null;restartSignature=null;chat=[];imageTask=null;for(const u of images)URL.revokeObjectURL(u);images=[];
+  : 'AI 未启用时可先用模板。';$('chat-send').disabled=!me.ai_enabled;$('chat-input').disabled=!me.ai_enabled;$('ai-context').disabled=!me.ai_enabled||me.ai_context_enabled!==true||me.ai_context_version!==2;$('ai-job-context').disabled=!me.ai_enabled||me.ai_job_context_enabled!==true;aiDraftEnabled=me.ai_enabled&&me.ai_draft_enabled===true;$('ai-generate').disabled=!aiDraftEnabled;$('ai-context-note').textContent=me.ai_context_enabled===true&&me.ai_context_version===2?'勾选后附带发送时的模板选择和编辑框草案。表单修改请先写入 JSON。':'任务上下文需更新，请先部署第010项修正版后端。';notify(me.files_enabled?'已连接。可以提交模板并在确认后计算。':'已连接。R2 未绑定：能看结果摘要，但暂不能在线下载文件。');await refresh();});
+$('logout').onclick=()=>{epoch++;$('ai-job-context').checked=false;$('ai-job-context').disabled=true;$('ai-job-status').textContent='本轮未附带已提交任务。';clearAIProposal();aiPending=false;aiDraftEnabled=false;$('ai-generate').disabled=true;token='';clearTimeout(timer);busy=false;selected=null;detail=null;jobs=[];templates={};draftKey=null;restartKey=null;restartSignature=null;chat=[];imageTask=null;for(const u of images)URL.revokeObjectURL(u);images=[];
  for(const id of ['jobs','figures','files','chat-log','plan-json','result-summary','events','log','error'])$(id).replaceChildren();
  $('spec').value='';$('description').value='';$('chat-input').value='';$('reviewed').checked=false;$('ai-consent').checked=false;$('ai-context').checked=false;$('ai-context').disabled=true;$('ai-context-status').textContent='尚未发送本轮草案。';$('detail').hidden=true;$('detail-empty').hidden=false;
  $('workspace').hidden=true;$('login-panel').hidden=false;$('connection').textContent='未连接';notify('已退出；令牌与本次页面数据已清除。');};
@@ -74,18 +74,30 @@ async function sendAI(mode){
   if(!$('ai-consent').checked)throw Error('请先勾选允许发送给外部模型');
   if(mode==='draft'&&!aiDraftEnabled)throw Error('请先部署第011项后端并重新连接');
   if(mode==='draft'&&!$('ai-context').checked)throw Error('生成草案需要勾选附带当前模板与任务 JSON');
+  let jobId;
+  if($('ai-job-context').checked){
+   if($('ai-job-context').disabled)throw Error('请先部署第013项后端并重新连接');
+   if(mode==='draft')throw Error('附带已提交任务仅用于普通对话，请取消勾选后生成草案');
+   if(!selected)throw Error('请先在任务列表选择一个已提交任务');
+   jobId=selected;
+  }
   const context=buildAIContext();
   const baseSnapshot=context?JSON.stringify(context.draft):null,formSnapshot=aiFormSnapshot();
   if(mode==='draft')clearAIProposal();
   const pending={role:'user',content:msg};
   $('ai-context-status').textContent=context?'正在发送本轮草案，等待后端确认。':'本轮未附带任务 JSON。';
+  $('ai-job-status').textContent=jobId?'正在读取选中任务 '+jobId+'，等待后端确认。':'本轮未附带已提交任务。';
   aiPending=true;
   try{
-   const r=await call('/v1/ai/chat','POST',{mode,messages:[...chat,pending].slice(-8),allow_external:true,...(context?{context}:{})});
+   const r=await call('/v1/ai/chat','POST',{mode,messages:[...chat,pending].slice(-8),allow_external:true,...(context?{context}:{}),...(jobId?{job_id:jobId}:{})});
    if(context){
     if(r.context_attached!==true||!r.context_receipt)throw Error('后端未确认本轮草案，请核对部署版本');
     const v=r.context_receipt;
     $('ai-context-status').textContent='后端收到本轮草案：model_id='+JSON.stringify(v.model_id)+'，dimension='+JSON.stringify(v.dimension)+'，target_index='+JSON.stringify(v.target_index);
+   }
+   if(jobId){
+    if(r.job_receipt?.task_id!==jobId)throw Error('后端未确认本轮选中任务，请核对部署版本');
+    $('ai-job-status').textContent='后端读取任务：'+r.job_receipt.task_id+' · '+(T[r.job_receipt.status]||r.job_receipt.status)+' · 快照时间 '+r.job_receipt.captured_at;
    }
    if(mode==='draft'){
     if(!r.proposal?.spec||!Array.isArray(r.proposal.changes))throw Error('后端未返回配置草案，请核对第011项部署版本');
