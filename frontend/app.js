@@ -6,9 +6,17 @@ let token='',templates={},selected=null,detail=null,timer=null,busy=false,jobs=[
 function notify(s,bad=false){$('message').textContent=s;$('message').className=bad?'bad':'';}
 function el(tag,text,cls){const x=document.createElement(tag);if(text!==undefined)x.textContent=text;if(cls)x.className=cls;return x;}
 async function call(path,method='GET',data=null,extra={}) {
- const session=epoch,c=new AbortController(),timeout=setTimeout(()=>c.abort(),cfg.requestTimeoutMs);
+ const isAI=path==='/v1/ai/chat';
+ const requestTimeoutMs=isAI?90000:cfg.requestTimeoutMs;
+ const session=epoch,c=new AbortController(),timeout=setTimeout(()=>c.abort(),requestTimeoutMs);
  try{const r=await fetch(cfg.apiBase+path,{method,signal:c.signal,cache:'no-store',credentials:'omit',headers:{Authorization:'Bearer '+token,...(data?{'Content-Type':'application/json'}:{}),...extra},body:data?JSON.stringify(data):undefined});
  if(!r.ok){let b;try{b=await r.json();}catch{}throw Error(b?.error?.message||`HTTP ${r.status}`);}const result=await r.json();if(session!==epoch)throw Error('SESSION_CHANGED');return result;}
+ catch(e){
+  if(isAI&&e.name==='AbortError'){
+   throw Error('AI响应等待超过90秒，网页已停止等待；后端可能仍在处理，本次额度状态尚不确定。请勿立即重复发送，也不要据此认为额度已退回。');
+  }
+  throw e;
+ }
  finally{clearTimeout(timeout);}
 }
 async function guarded(button,fn){const session=epoch;button.disabled=true;try{await fn();}catch(e){if(session===epoch)notify(e.name==='AbortError'?'请求超时。不要重复创建新任务；再次点击会使用同一请求编号。':e.message,true);}finally{button.disabled=false;}}
