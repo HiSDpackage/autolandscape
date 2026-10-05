@@ -2,7 +2,7 @@
 const cfg=window.AUTOLANDSCAPE_CONFIG,$=id=>document.getElementById(id);
 const T={PREPARE_QUEUED:'等待校内复核',PREPARING:'校内正在复核',PREPARED:'等待你确认',QUEUED:'已确认，等待计算',RUNNING:'计算中',UPLOADING:'上传结果中',SUCCEEDED:'计算完成',NEEDS_REVIEW:'结果需检查',FAILED:'失败',BLOCKED:'被校验阻止',INTERRUPTED:'已中断，未重算',RESOURCE_EXCEEDED:'资源达到上限',TIMED_OUT:'超时',CANCELLED:'已取消'};
 const END=new Set(['SUCCEEDED','NEEDS_REVIEW','FAILED','BLOCKED','INTERRUPTED','RESOURCE_EXCEEDED','TIMED_OUT','CANCELLED']);
-let token='',templates={},selected=null,detail=null,timer=null,busy=false,jobs=[],draftKey=null,chat=[],images=[],imageTask=null,epoch=0,restartKey=null,restartSignature=null;
+let token='',templates={},selected=null,detail=null,timer=null,busy=false,jobs=[],draftKey=null,chat=[],images=[],imageTask=null,epoch=0,restartKey=null,restartSignature=null,aiProposal=null,aiPending=false,aiDraftEnabled=false;
 function notify(s,bad=false){$('message').textContent=s;$('message').className=bad?'bad':'';}
 function el(tag,text,cls){const x=document.createElement(tag);if(text!==undefined)x.textContent=text;if(cls)x.className=cls;return x;}
 async function call(path,method='GET',data=null,extra={}) {
@@ -20,8 +20,8 @@ $('load-template').onclick=()=>{writeSpec(structuredClone(templates[$('template'
 $('import').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;if(f.size>30000)throw Error('仅允许30KB以内的任务 JSON');writeSpec(JSON.parse(await f.text()));notify('已导入草案，尚未提交。');}catch(x){notify(x.message,true);}e.target.value='';};
 $('login').onclick=()=>guarded($('login'),async()=>{token=$('token').value.trim();const me=await call('/v1/me');templates=await call('/v1/templates');$('template').replaceChildren();for(const [k,v] of Object.entries(templates)){const o=el('option',v.name);o.value=k;$('template').append(o);}writeSpec(structuredClone(Object.values(templates)[0].spec));$('token').value='';$('login-panel').hidden=true;$('workspace').hidden=false;$('user-label').textContent='用户：'+me.id;$('connection').textContent='API 已连接';$('ai-badge').textContent=me.ai_enabled?'已配置':'未启用';$('chat-input').placeholder = me.ai_enabled
   ? '描述你的系统、计算目标，或询问参数含义。'
-  : 'AI 未启用时可先用模板。';$('chat-send').disabled=!me.ai_enabled;$('chat-input').disabled=!me.ai_enabled;$('ai-context').disabled=!me.ai_enabled||me.ai_context_enabled!==true||me.ai_context_version!==2;$('ai-context-note').textContent=me.ai_context_enabled===true&&me.ai_context_version===2?'勾选后附带发送时的模板选择和编辑框草案。表单修改请先写入 JSON。':'任务上下文需更新，请先部署第010项修正版后端。';notify(me.files_enabled?'已连接。可以提交模板并在确认后计算。':'已连接。R2 未绑定：能看结果摘要，但暂不能在线下载文件。');await refresh();});
-$('logout').onclick=()=>{epoch++;token='';clearTimeout(timer);busy=false;selected=null;detail=null;jobs=[];templates={};draftKey=null;restartKey=null;restartSignature=null;chat=[];imageTask=null;for(const u of images)URL.revokeObjectURL(u);images=[];
+  : 'AI 未启用时可先用模板。';$('chat-send').disabled=!me.ai_enabled;$('chat-input').disabled=!me.ai_enabled;$('ai-context').disabled=!me.ai_enabled||me.ai_context_enabled!==true||me.ai_context_version!==2;aiDraftEnabled=me.ai_enabled&&me.ai_draft_enabled===true;$('ai-generate').disabled=!aiDraftEnabled;$('ai-context-note').textContent=me.ai_context_enabled===true&&me.ai_context_version===2?'勾选后附带发送时的模板选择和编辑框草案。表单修改请先写入 JSON。':'任务上下文需更新，请先部署第010项修正版后端。';notify(me.files_enabled?'已连接。可以提交模板并在确认后计算。':'已连接。R2 未绑定：能看结果摘要，但暂不能在线下载文件。');await refresh();});
+$('logout').onclick=()=>{epoch++;clearAIProposal();aiPending=false;aiDraftEnabled=false;$('ai-generate').disabled=true;token='';clearTimeout(timer);busy=false;selected=null;detail=null;jobs=[];templates={};draftKey=null;restartKey=null;restartSignature=null;chat=[];imageTask=null;for(const u of images)URL.revokeObjectURL(u);images=[];
  for(const id of ['jobs','figures','files','chat-log','plan-json','result-summary','events','log','error'])$(id).replaceChildren();
  $('spec').value='';$('description').value='';$('chat-input').value='';$('reviewed').checked=false;$('ai-consent').checked=false;$('ai-context').checked=false;$('ai-context').disabled=true;$('ai-context-status').textContent='尚未发送本轮草案。';$('detail').hidden=true;$('detail-empty').hidden=false;
  $('workspace').hidden=true;$('login-panel').hidden=false;$('connection').textContent='未连接';notify('已退出；令牌与本次页面数据已清除。');};
@@ -64,6 +64,55 @@ function buildAIContext(){
    throw Error('任务 JSON 超过16KB，请精简，或取消附带任务 JSON 后提问');
  return { template_id: $('template').value, draft };
 }
-$('chat-send').onclick=()=>guarded($('chat-send'),async()=>{const msg=$('chat-input').value.trim();if(!msg)return;if(!$('ai-consent').checked)throw Error('请先勾选允许发送给外部模型');const context=buildAIContext();const pending={role:'user',content:msg};$('ai-context-status').textContent=context?'正在发送本轮草案，等待后端确认。':'本轮未附带任务 JSON。';const r=await call('/v1/ai/chat','POST',{messages:[...chat,pending].slice(-8),allow_external:true,...(context?{context}:{})});if(context){if(r.context_attached!==true||!r.context_receipt)throw Error('后端未确认本轮草案，请核对是否部署了第010项修正版');const v=r.context_receipt;$('ai-context-status').textContent='后端收到本轮草案：model_id='+JSON.stringify(v.model_id)+'，dimension='+JSON.stringify(v.dimension)+'，target_index='+JSON.stringify(v.target_index);}chat.push(pending,{role:'assistant',content:r.message});$('chat-input').value='';$('chat-log').replaceChildren(...chat.slice(-12).map(m=>el('div',(m.role==='user'?'你：':'助手：')+m.content,'chat-entry')));});
+function aiFormSnapshot(){return JSON.stringify(['project-name','description','timestep','target-index','initial-point','walltime','memory','cpu'].map(id=>$(id).value));}
+function clearAIProposal(){aiProposal=null;$('ai-proposal').hidden=true;$('ai-proposal-json').textContent='';$('ai-proposal-changes').textContent='';$('ai-apply').disabled=true;}
+async function sendAI(mode){
+ const button=mode==='draft'?$('ai-generate'):$('chat-send');
+ return guarded(button,async()=>{
+  if(aiPending)throw Error('请等待当前AI请求完成');
+  const msg=$('chat-input').value.trim();if(!msg)return;
+  if(!$('ai-consent').checked)throw Error('请先勾选允许发送给外部模型');
+  if(mode==='draft'&&!aiDraftEnabled)throw Error('请先部署第011项后端并重新连接');
+  if(mode==='draft'&&!$('ai-context').checked)throw Error('生成草案需要勾选附带当前模板与任务 JSON');
+  const context=buildAIContext();
+  const baseSnapshot=context?JSON.stringify(context.draft):null,formSnapshot=aiFormSnapshot();
+  if(mode==='draft')clearAIProposal();
+  const pending={role:'user',content:msg};
+  $('ai-context-status').textContent=context?'正在发送本轮草案，等待后端确认。':'本轮未附带任务 JSON。';
+  aiPending=true;
+  try{
+   const r=await call('/v1/ai/chat','POST',{mode,messages:[...chat,pending].slice(-8),allow_external:true,...(context?{context}:{})});
+   if(context){
+    if(r.context_attached!==true||!r.context_receipt)throw Error('后端未确认本轮草案，请核对部署版本');
+    const v=r.context_receipt;
+    $('ai-context-status').textContent='后端收到本轮草案：model_id='+JSON.stringify(v.model_id)+'，dimension='+JSON.stringify(v.dimension)+'，target_index='+JSON.stringify(v.target_index);
+   }
+   if(mode==='draft'){
+    if(!r.proposal?.spec||!Array.isArray(r.proposal.changes))throw Error('后端未返回配置草案，请核对第011项部署版本');
+    if(r.proposal.changes.length){
+     aiProposal={spec:r.proposal.spec,baseSnapshot,formSnapshot};
+     $('ai-proposal-changes').textContent=r.proposal.changes.map(c=>c.path+'：'+JSON.stringify(c.before)+' → '+JSON.stringify(c.after)).join('\n');
+     $('ai-proposal-json').textContent=JSON.stringify(r.proposal.spec,null,2);
+     $('ai-proposal').hidden=false;$('ai-apply').disabled=false;
+    }else notify('本次没有参数改动，请查看助手说明。');
+   }
+   chat.push(pending,{role:'assistant',content:r.message});
+   $('chat-input').value='';
+   $('chat-log').replaceChildren(...chat.slice(-12).map(m=>el('div',(m.role==='user'?'你：':'助手：')+m.content,'chat-entry')));
+  }finally{aiPending=false;}
+ });
+}
+$('chat-send').onclick=()=>sendAI('chat');
+$('ai-generate').onclick=()=>sendAI('draft');
+$('ai-apply').onclick=()=>{
+ try{
+  if(!aiProposal)return;
+  if(JSON.stringify(readSpec())!==aiProposal.baseSnapshot||aiFormSnapshot()!==aiProposal.formSnapshot)
+   throw Error('生成后当前配置已改变，请重新生成草案，避免覆盖你的新修改');
+  writeSpec(structuredClone(aiProposal.spec));clearAIProposal();
+  notify('AI 草案已应用到编辑框，尚未提交。请检查后发送 fat01 复核。');
+ }catch(e){notify(e.message,true);}
+};
+$('ai-discard').onclick=clearAIProposal;
 async function refresh(){if(!token)return;clearTimeout(timer);if(busy)return;const session=epoch;busy=true;try{const dashboard=await call('/v1/dashboard'+(selected?'?job='+encodeURIComponent(selected):''));jobs=dashboard.jobs;renderJobs();const w=dashboard.workers;$('worker-state').textContent=w.length?w.map(x=>`${x.id}：${x.online?(x.mode==='STANDBY'?'待机':'工作'):'离线/状态过期'}，取件间隔${x.poll_seconds}秒`).join('；'):'fat01 尚未上线';if(selected&&dashboard.detail){renderDetail(dashboard.detail);}else if(jobs.length){selected=jobs[0].id;renderDetail(await call('/v1/jobs/'+selected));renderJobs();}$('connection').textContent='API 已连接';}catch(e){if(session!==epoch)return;$('connection').textContent='连接中断';notify('状态暂未更新：'+e.message,true);}finally{if(session!==epoch)return;busy=false;const active=jobs.some(j=>!END.has(j.status));timer=setTimeout(refresh,document.hidden?30000:(active?cfg.activeRefreshMs:cfg.idleRefreshMs));}}
 $('refresh').onclick=refresh;document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
