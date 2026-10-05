@@ -21,7 +21,7 @@
 <label>研究说明 / 需注意的假设<textarea id="description" rows="3" placeholder="描述目标。系统不会自行补充物理模型。"></textarea></label>
 <button id="prepare" class="primary full">发送给 fat01 复核方案，不开始计算</button><p class="small">待机每120秒取件；工作状态每5秒取件。待机时新任务可能等待约2分钟。</p>
 </section>
-<section class="card"><div class="section-title"><span class="step">AI</span><div><h2>配置助手 <span id="ai-badge" class="pill">未启用</span></h2><p>只能提供解释和建议，不能确认或运行任务。</p></div></div><div id="chat-log" class="chat-log"></div><textarea id="chat-input" rows="3" placeholder="AI 未启用时可先用模板。"></textarea><label class="check"><input type="checkbox" id="ai-consent">允许将本次对话发送给管理员配置的外部模型</label><button id="chat-send" class="quiet">发送给配置助手</button></section>
+<section class="card"><div class="section-title"><span class="step">AI</span><div><h2>配置助手 <span id="ai-badge" class="pill">未启用</span></h2><p>只能提供解释和建议，不能确认或运行任务。</p></div></div><div id="chat-log" class="chat-log"></div><textarea id="chat-input" rows="3" placeholder="AI 未启用时可先用模板。"></textarea><label class="check"><input type="checkbox" id="ai-consent">允许将本次对话及勾选附带的任务 JSON 发送给管理员配置的外部模型</label><label class="check"><input type="checkbox" id="ai-context" disabled>附带当前模板与任务 JSON</label><p id="ai-context-note" class="small">勾选后附带发送时的模板选择和编辑框草案。表单修改请先写入 JSON。</p><button id="chat-send" class="quiet">发送给配置助手</button></section>
 </div>
 <div class="right">
 <section class="card"><div class="section-title"><span class="step">02</span><div><h2>我的任务</h2><p>仅显示当前用户的任务；最新50项。</p></div></div><div id="jobs" class="jobs"><p>尚无任务</p></div></section>
