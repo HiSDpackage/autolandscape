@@ -43,7 +43,8 @@ let token = "",
   restartSignature = null,
   aiProposal = null,
   aiPending = false,
-  aiDraftEnabled = false;
+  aiDraftEnabled = false,
+  draftMode = false;
 let noticeTimer;
 function notify(s, bad = false) {
   clearTimeout(noticeTimer);
@@ -200,6 +201,7 @@ async function loginSession(saved = null) {
     if (saved && Date.now() - saved.lastActivity >= IDLE_MS)
       throw Error("登录已过期，请重新登录。");
     chat = saved?.chat || [];
+    draftMode = saved?.draftMode === true && me.ai_draft_enabled === true;
     lastActivity = saved?.lastActivity || Date.now();
     sessionActive = true;
     saveSession();
@@ -250,6 +252,9 @@ $("logout").onclick = () => {
   clearAIProposal();
   aiPending = false;
   aiDraftEnabled = false;
+  draftMode = false;
+  $("ai-generate").classList.remove("is-selected");
+  $("ai-generate").setAttribute("aria-pressed", "false");
   $("ai-generate").disabled = true;
   token = "";
   clearTimeout(timer);
@@ -683,8 +688,17 @@ function setAIActionStatus(message, bad = false) {
   status.className = bad ? "small bad" : "small";
   status.hidden = !message;
 }
+// A narrow UI hint for explicit edits, not a replacement for server validation.
+function asksToEditDraft(message) {
+  if (/(?:不要|不需要|无需|不必|别).{0,8}(?:改|调整|更新|生成|设置)/.test(message))
+    return false;
+  if (/^(?:请|帮我)?(?:解释|说明|分析|检查|比较)/.test(message.trim())) return false;
+  const target = /json|草案|配置|任务名称|项目名称|目标指标|初始点|时间步长|步长|线程|内存|时间预算|project\.name|target_index|initial_point|timestep|cpu_threads|memory_mb|walltime_seconds|max_iterations|tolerance/i;
+  const action = /(?:帮我|替我|请|直接).{0,40}(?:改|调整|更新|生成|设置|创建|写)|把.{0,40}改(?:成|为)|^(?:修改|调整|更新|生成|创建|设置).{0,40}/;
+  return target.test(message) && action.test(message);
+}
 async function sendAI(mode) {
-  const button = mode === "draft" ? $("ai-generate") : $("chat-send");
+  const button = $("chat-send");
   const requestEpoch = epoch;
   return guarded(button, async () => {
     setAIActionStatus("");
@@ -694,9 +708,13 @@ async function sendAI(mode) {
       $("chat-input").focus();
       throw Error(
         mode === "draft"
-          ? "请先在输入框写明修改要求，再点击“生成配置草案”。例如：仅将任务名称改为 demo-cubic，其余不变。"
+          ? "请先输入修改要求，再点击发送。例如：仅将任务名称改为 demo-cubic，其余不变。"
           : "请先输入问题，再点击发送。",
       );
+    }
+    if (mode === "chat" && asksToEditDraft(msg)) {
+      $("ai-generate").focus();
+      throw Error("如需修改任务 JSON，请先点击“生成配置草案”开启蓝色模式，再点击发送。你的要求仍保留在输入框中。");
     }
     if (!$("ai-consent").checked) throw Error("请先勾选允许发送给外部模型");
     if (mode === "draft" && !aiDraftEnabled)
@@ -738,6 +756,9 @@ async function sendAI(mode) {
             ...pending,
             content:
               msg +
+              (mode === "chat"
+                ? "\n\n[页面操作：本轮是普通对话，未开启配置草案模式。如果用户请求修改或生成当前任务JSON，请提示先点击“生成配置草案”使其显示蓝色，再通过发送箭头提交要求。不要声称网页JSON已被修改；概念解释和配置检查可以正常回答。]"
+                : "") +
               (!selected
                 ? "\n\n[页面状态：本轮没有选择已提交任务。若需要读取任务信息，请说明尚未选择任务，不要引用之前任务作为当前任务。]"
                 : !jobId
@@ -817,8 +838,18 @@ async function sendAI(mode) {
     }
   });
 }
-$("chat-send").onclick = () => sendAI("chat");
-$("ai-generate").onclick = () => sendAI("draft");
+$("chat-send").onclick = () => sendAI(draftMode ? "draft" : "chat");
+$("ai-generate").onclick = () => {
+  if (!aiDraftEnabled || aiPending) return;
+  draftMode = !draftMode;
+  setAIControls();
+  saveSession();
+  setAIActionStatus(
+    draftMode
+      ? "已开启配置草案模式。附带当前草案、取消附带任务，输入修改要求后点击发送。再次点击蓝色按钮可取消。"
+      : "已切回普通对话。已有配置建议仍可检查或丢弃。",
+  );
+};
 $("ai-apply").onclick = () => {
   try {
     if (!aiProposal) return;
@@ -961,14 +992,22 @@ function selectTaskView(id) {
 function setAIControls() {
   $("chat-send").disabled = !aiEnabled || aiPending;
   $("ai-generate").disabled = !aiDraftEnabled || aiPending;
+  $("ai-generate").classList.toggle("is-selected", draftMode);
+  $("ai-generate").setAttribute("aria-pressed", String(draftMode));
   $("ai-generate").title = !aiDraftEnabled
     ? "当前服务未开放配置草案生成，请联系管理员。"
-    : "先输入具体修改要求，再点击生成；发送箭头仅用于普通对话。";
+    : draftMode
+      ? "配置草案模式已开启，点击取消；发送箭头用于提交修改要求。"
+      : "开启配置草案模式；此按钮不会发送消息。";
+  $("chat-send").title = draftMode ? "发送草案修改要求" : "发送消息";
+  $("chat-send").setAttribute("aria-label", $("chat-send").title);
   $("chat-input").disabled = !aiEnabled || aiPending;
   $("new-chat").disabled = aiPending;
   $("chat-state").textContent = aiPending
     ? "正在思考…"
-    : "Enter 发送 · Shift + Enter 换行";
+    : draftMode
+      ? "配置草案模式 · Enter 发送 · Shift + Enter 换行"
+      : "Enter 发送 · Shift + Enter 换行";
 }
 function renderChat(pending = null, error = null) {
   $("chat-welcome").hidden = chat.length > 0 || !!pending;
@@ -1079,7 +1118,7 @@ function saveSession() {
   try {
     sessionStorage.setItem(
       SESSION_KEY,
-      JSON.stringify({ token, lastActivity, chat }),
+      JSON.stringify({ token, lastActivity, chat, draftMode }),
     );
   } catch {
     notify("浏览器无法保存本次会话，刷新后可能需要重新登录。", true);

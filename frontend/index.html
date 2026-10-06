@@ -196,7 +196,7 @@
                     >Enter 发送 · Shift + Enter 换行</span
                   >
                   <div>
-                    <button id="ai-generate" class="text-button" disabled>
+                    <button id="ai-generate" class="text-button" aria-pressed="false" disabled>
                       生成配置草案</button
                     ><button
                       id="chat-send"
@@ -479,7 +479,7 @@
                   <p>
                     在“配置新任务”中选择并载入模板。修改表单后点击“保存参数到草案”，提交以
                     JSON 为准。需要 AI
-                    建议时，附带草案、取消附带任务，先在输入框写明修改要求，例如“仅将任务名称改为 demo-cubic，其余不变”，再点“生成配置草案”。出现改动清单后，检查并点击“应用到任务草案”。发送箭头只返回对话，不会应用文字建议。
+                    建议时，附带草案、取消附带任务，点击“生成配置草案”开启蓝色模式，先在输入框写明修改要求，例如“仅将任务名称改为 demo-cubic，其余不变”，再点击发送箭头或按 Enter。出现改动清单后，检查并点击“应用到任务草案”。蓝色按钮只切换模式，再次点击可取消；普通对话中的文字建议不会修改草案。
                   </p>
                   <h3>3. 复核后确认计算</h3>
                   <p>

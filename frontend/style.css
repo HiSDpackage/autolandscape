@@ -1359,3 +1359,13 @@ pre {
     transition: none !important;
   }
 }
+
+/* Draft mode is a toggle; sending remains a separate action. */
+#ai-generate.is-selected {
+  color: #fff;
+  background: #2563eb;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px #1d4ed8;
+}
+#ai-generate.is-selected:hover { background: #1d4ed8; }
+#ai-generate:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
