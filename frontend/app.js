@@ -64,6 +64,10 @@ function el(tag, text, cls) {
   return x;
 }
 async function call(path, method = "GET", data = null, extra = {}) {
+  if (sessionActive && Date.now() - lastActivity >= IDLE_MS) {
+    expireSession();
+    throw Error("登录已过期，请重新登录。");
+  }
   const isAI = path === "/v1/ai/chat";
   const requestTimeoutMs = isAI ? 90000 : cfg.requestTimeoutMs;
   const session = epoch,
@@ -87,6 +91,10 @@ async function call(path, method = "GET", data = null, extra = {}) {
       try {
         b = await r.json();
       } catch {}
+      if (r.status === 401 && sessionActive) {
+        $("logout").click();
+        notify("登录已失效，请重新登录。", true);
+      }
       throw Error(b?.error?.message || `HTTP ${r.status}`);
     }
     const result = await r.json();
@@ -172,9 +180,10 @@ $("import").onchange = async (e) => {
   }
   e.target.value = "";
 };
-$("login").onclick = () =>
-  guarded($("login"), async () => {
-    token = $("token").value.trim();
+async function loginSession(saved = null) {
+  return guarded($("login"), async () => {
+    token = saved?.token || $("token").value.trim();
+    const loginEpoch = epoch;
     const me = await call("/v1/me");
     templates = await call("/v1/templates");
     $("template").replaceChildren();
@@ -184,6 +193,14 @@ $("login").onclick = () =>
       $("template").append(o);
     }
     writeSpec(structuredClone(Object.values(templates)[0].spec));
+    if (loginEpoch !== epoch) return;
+    if (saved && Date.now() - saved.lastActivity >= IDLE_MS)
+      throw Error("登录已过期，请重新登录。");
+    chat = saved?.chat || [];
+    lastActivity = saved?.lastActivity || Date.now();
+    sessionActive = true;
+    saveSession();
+    scheduleIdleLogout();
     $("token").value = "";
     $("login-panel").hidden = true;
     $("workspace").hidden = false;
@@ -215,8 +232,15 @@ $("login").onclick = () =>
     if (!me.files_enabled) notify("当前可以查看结果摘要，文件下载暂不可用。");
     await refresh();
   });
+}
+$("login").onclick = () => loginSession();
 $("logout").onclick = () => {
   epoch++;
+  sessionActive = false;
+  clearTimeout(idleTimer);
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch {}
   $("ai-job-context").checked = false;
   $("ai-job-context").disabled = true;
   $("ai-job-status").textContent = "本轮未附带已提交任务。";
@@ -667,8 +691,8 @@ async function sendAI(mode) {
         throw Error("当前暂不支持读取任务，请联系管理员");
       if (mode === "draft")
         throw Error("附带已提交任务仅用于普通对话，请取消勾选后生成草案");
-      if (!selected) throw Error("请先在任务列表选择一个已提交任务");
-      jobId = selected;
+      jobId = selected || undefined;
+      if (!jobId) notify("没有选择任务，本轮继续普通对话。");
     }
     const context = buildAIContext();
     const baseSnapshot = context ? JSON.stringify(context.draft) : null,
@@ -680,14 +704,28 @@ async function sendAI(mode) {
       : "本轮未附带任务 JSON。";
     $("ai-job-status").textContent = jobId
       ? "正在读取选中任务 " + jobId + "，等待确认。"
-      : "本轮未附带已提交任务。";
+      : selected
+        ? "本轮未附带已提交任务。"
+        : "没有选择任务，本轮不读取任务信息。";
     aiPending = true;
     setAIControls();
     renderChat(pending);
     try {
       const r = await call("/v1/ai/chat", "POST", {
         mode,
-        messages: [...chat, pending].slice(-8),
+        messages: [
+          ...chat,
+          {
+            ...pending,
+            content:
+              msg +
+              (!selected
+                ? "\n\n[页面状态：本轮没有选择已提交任务。若需要读取任务信息，请说明尚未选择任务，不要引用之前任务作为当前任务。]"
+                : !jobId
+                  ? "\n\n[页面状态：本轮未附带已提交任务，请勿将历史任务信息视为本轮已读取的数据。]"
+                  : ""),
+          },
+        ].slice(-8),
         allow_external: true,
         ...(context ? { context } : {}),
         ...(jobId ? { job_id: jobId } : {}),
@@ -740,6 +778,7 @@ async function sendAI(mode) {
         } else notify("本次没有参数改动，请查看助手说明。");
       }
       chat.push(pending, { role: "assistant", content: r.message });
+      saveSession();
       $("chat-input").value = "";
       renderChat();
     } catch (e) {
@@ -825,7 +864,7 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) refresh();
 });
 
-// Workspace navigation and presentation. Authentication remains in page memory.
+// Workspace navigation and presentation.
 let aiEnabled = false,
   panelKind = null,
   chatVisible = true,
@@ -948,8 +987,16 @@ $("close-chat").onclick = () => {
 $("close-panel").onclick = () => showChat(true);
 $("new-chat").onclick = () => {
   if (aiPending) return;
+  if (
+    (chat.length || $("chat-input").value.trim() || aiProposal) &&
+    !confirm(
+      "当前仅保留一个临时对话。开始新对话将清空现有消息、未发送内容和配置建议，无法恢复。是否继续？",
+    )
+  )
+    return;
   chat = [];
   clearAIProposal();
+  saveSession();
   renderChat();
   $("chat-input").value = "";
 };
@@ -991,3 +1038,92 @@ document.addEventListener("keydown", (e) => {
     $("user-menu").open = false;
   }
 });
+
+// Per-tab session: reloads retain login; only real user activity extends expiry.
+const SESSION_KEY = "autolandscape.session.v1";
+const IDLE_MS = 30 * 60 * 1000;
+let lastActivity = 0,
+  idleTimer = null,
+  sessionActive = false;
+function saveSession() {
+  if (!sessionActive || !token) return;
+  try {
+    sessionStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({ token, lastActivity, chat }),
+    );
+  } catch {
+    notify("浏览器无法保存本次会话，刷新后可能需要重新登录。", true);
+  }
+}
+function expireSession() {
+  $("logout").click();
+  notify("已连续30分钟无操作，请重新登录。", true);
+}
+function scheduleIdleLogout() {
+  clearTimeout(idleTimer);
+  if (!sessionActive) return;
+  const remaining = IDLE_MS - (Date.now() - lastActivity);
+  if (remaining <= 0) return expireSession();
+  idleTimer = setTimeout(scheduleIdleLogout, remaining);
+}
+function recordActivity(e) {
+  if (!e.isTrusted || !sessionActive) return;
+  if (Date.now() - lastActivity >= IDLE_MS) return expireSession();
+  // Throttle storage writes, while always measuring the latest interaction.
+  const previous = lastActivity;
+  lastActivity = Date.now();
+  if (lastActivity - previous > 1000 || e.type !== "pointermove") saveSession();
+  scheduleIdleLogout();
+}
+for (const event of [
+  "pointerdown",
+  "pointermove",
+  "keydown",
+  "input",
+  "wheel",
+  "touchstart",
+])
+  document.addEventListener(event, recordActivity, {
+    capture: true,
+    passive: true,
+  });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) scheduleIdleLogout();
+});
+window.addEventListener("pagehide", saveSession);
+async function restoreSession() {
+  let saved;
+  try {
+    saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
+  } catch {}
+  if (!saved) return;
+  if (
+    typeof saved.token !== "string" ||
+    !Number.isFinite(saved.lastActivity) ||
+    Date.now() - saved.lastActivity >= IDLE_MS ||
+    saved.lastActivity > Date.now()
+  ) {
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+    } catch {}
+    notify("登录已过期，请重新登录。", true);
+    return;
+  }
+  saved.chat = Array.isArray(saved.chat)
+    ? saved.chat.filter(
+        (m) =>
+          ["user", "assistant"].includes(m.role) &&
+          typeof m.content === "string",
+      )
+    : [];
+  await loginSession(saved);
+  // Failed validation must not leave a remembered login or credentials behind.
+  if (!sessionActive) {
+    token = "";
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+    } catch {}
+  }
+}
+restoreSession();
