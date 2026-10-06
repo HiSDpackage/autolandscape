@@ -117,13 +117,16 @@ async function guarded(button, fn) {
   try {
     await fn();
   } catch (e) {
-    if (session === epoch)
+    if (session === epoch) {
+      if (button.id === "chat-send" || button.id === "ai-generate")
+        setAIActionStatus(e.message, true);
       notify(
         e.name === "AbortError"
           ? "请求超时。不要重复创建新任务；再次点击会使用同一请求编号。"
           : e.message,
         true,
       );
+    }
   } finally {
     button.disabled = false;
     if (button.id === "chat-send" || button.id === "ai-generate")
@@ -259,6 +262,7 @@ $("logout").onclick = () => {
   restartKey = null;
   restartSignature = null;
   chat = [];
+  setAIActionStatus("");
   imageTask = null;
   for (const u of images) URL.revokeObjectURL(u);
   images = [];
@@ -673,13 +677,27 @@ function clearAIProposal() {
   $("ai-proposal-changes").textContent = "";
   $("ai-apply").disabled = true;
 }
+function setAIActionStatus(message, bad = false) {
+  const status = $("ai-action-status");
+  status.textContent = message;
+  status.className = bad ? "small bad" : "small";
+  status.hidden = !message;
+}
 async function sendAI(mode) {
   const button = mode === "draft" ? $("ai-generate") : $("chat-send");
   const requestEpoch = epoch;
   return guarded(button, async () => {
+    setAIActionStatus("");
     if (aiPending) throw Error("请等待当前AI请求完成");
     const msg = $("chat-input").value.trim();
-    if (!msg) return;
+    if (!msg) {
+      $("chat-input").focus();
+      throw Error(
+        mode === "draft"
+          ? "请先在输入框写明修改要求，再点击“生成配置草案”。例如：仅将任务名称改为 demo-cubic，其余不变。"
+          : "请先输入问题，再点击发送。",
+      );
+    }
     if (!$("ai-consent").checked) throw Error("请先勾选允许发送给外部模型");
     if (mode === "draft" && !aiDraftEnabled)
       throw Error("当前暂不支持生成草案，请联系管理员");
@@ -708,6 +726,7 @@ async function sendAI(mode) {
         ? "本轮未附带已提交任务。"
         : "没有选择任务，本轮不读取任务信息。";
     aiPending = true;
+    setAIActionStatus(mode === "draft" ? "正在生成配置建议，当前草案尚未修改…" : "正在等待回答…");
     setAIControls();
     renderChat(pending);
     try {
@@ -775,8 +794,13 @@ async function sendAI(mode) {
           );
           $("ai-proposal").hidden = false;
           $("ai-apply").disabled = false;
-        } else notify("本次没有参数改动，请查看助手说明。");
+          setAIActionStatus("已生成配置建议。请检查上方改动，再点击“应用到任务草案”。");
+        } else {
+          setAIActionStatus("本次没有参数改动，请查看助手说明；需要澄清时，补充要求后重新生成。");
+          notify("本次没有参数改动，请查看助手说明。");
+        }
       }
+      if (mode !== "draft") setAIActionStatus("已收到回答。文字建议不会自动修改任务草案。");
       chat.push(pending, { role: "assistant", content: r.message });
       saveSession();
       $("chat-input").value = "";
@@ -806,6 +830,7 @@ $("ai-apply").onclick = () => {
     writeSpec(structuredClone(aiProposal.spec));
     clearAIProposal();
     showPanel("config");
+    setAIActionStatus("配置建议已应用到任务草案，尚未提交或开始计算。");
     notify("AI 草案已应用，请检查后提交方案复核。");
   } catch (e) {
     notify(e.message, true);
@@ -936,6 +961,9 @@ function selectTaskView(id) {
 function setAIControls() {
   $("chat-send").disabled = !aiEnabled || aiPending;
   $("ai-generate").disabled = !aiDraftEnabled || aiPending;
+  $("ai-generate").title = !aiDraftEnabled
+    ? "当前服务未开放配置草案生成，请联系管理员。"
+    : "先输入具体修改要求，再点击生成；发送箭头仅用于普通对话。";
   $("chat-input").disabled = !aiEnabled || aiPending;
   $("new-chat").disabled = aiPending;
   $("chat-state").textContent = aiPending
@@ -995,6 +1023,7 @@ $("new-chat").onclick = () => {
   )
     return;
   chat = [];
+  setAIActionStatus("");
   clearAIProposal();
   saveSession();
   renderChat();
