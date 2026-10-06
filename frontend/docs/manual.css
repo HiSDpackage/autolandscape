@@ -1,0 +1,41 @@
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0 auto; max-width: 980px; padding: 48px 40px 80px; font-family: system-ui,"Microsoft YaHei","PingFang SC",sans-serif; color: #23312e; font-size: 16px; line-height: 1.9; background: #fff; }
+a { color: #3a6153; text-underline-offset: 3px; }
+#title-block-header { padding: 34px 0; border-bottom: 2px solid #52645d; margin-bottom: 28px; }
+.title { font-size: 34px; margin: 0 0 14px; }
+.subtitle { color: #627069; font-size: 18px; }
+#TOC { background: #f4f6f3; padding: 20px 28px; border-radius: 8px; margin-bottom: 42px; }
+#TOC > ul { margin: 0; }
+h1 { font-size: 27px; margin-top: 50px; border-bottom: 1px solid #d3dad5; padding-bottom: 10px; line-height: 1.4; }
+h2 { font-size: 21px; margin-top: 30px; line-height: 1.5; }
+h3 { font-size: 17px; }
+p, li { overflow-wrap: anywhere; }
+table { border-collapse: collapse; width: 100%; margin: 22px 0; font-size: 14px; }
+th, td { border: 1px solid #d5dcd6; padding: 9px 12px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+th { background: #eff3ee; }
+code { font: .87em/1.7 ui-monospace,Consolas,monospace; background: #f1f4ef; padding: 1px 4px; overflow-wrap: anywhere; }
+pre { padding: 14px; border: 1px solid #d9ded8; background: #f6f8f4; white-space: pre-wrap; }
+pre code { padding: 0; background: none; }
+@media (max-width: 700px) { body { padding: 20px 18px 50px; font-size: 15px; } table { font-size: 12px; } th,td { padding: 6px; } }
+@media print {
+  @page { size: A4; margin: 19mm 18mm 21mm; }
+  body { padding: 0; width: auto; max-width: none; font-size: 10.5pt; line-height: 1.65; }
+  #title-block-header { min-height: 235mm; padding-top: 52mm; border-bottom: 0; break-after: page; }
+  .title { font-size: 30pt; }
+  .subtitle { font-size: 15pt; }
+  #TOC { background: none; padding: 0; break-after: page; margin: 0; font-size: 10pt; }
+  #TOC ul { padding-left: 20px; }
+  #TOC::before { content: "目录"; display: block; font-weight: bold; font-size: 22pt; margin-bottom: 10mm; }
+  h1:not(.title) { font-size: 19pt; margin-top: 8mm; }
+  h2 { font-size: 13pt; margin-top: 6mm; }
+  h3 { font-size: 11pt; }
+  h1,h2,h3 { break-after: avoid; }
+  table { font-size: 8.6pt; line-height: 1.5; margin: 4mm 0; }
+  th,td { padding: 2.4mm; }
+  tr { break-inside: avoid; }
+  thead { display: table-header-group; }
+  p { orphans: 3; widows: 3; }
+  pre { break-inside: avoid; font-size: 8pt; }
+  a { color: inherit; }
+}
