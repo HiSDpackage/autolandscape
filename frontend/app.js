@@ -92,7 +92,7 @@ async function call(path, method = "GET", data = null, extra = {}) {
       try {
         b = await r.json();
       } catch {}
-      if (r.status === 401 && sessionActive) {
+      if (r.status === 401 && sessionActive && session === epoch) {
         $("logout").click();
         notify("登录已失效，请重新登录。", true);
       }
@@ -184,6 +184,7 @@ $("import").onchange = async (e) => {
   }
   e.target.value = "";
 };
+let accountLoginInfo = null;
 async function loginSession(saved = null) {
   return guarded($("login"), async () => {
     token = saved?.token || $("token").value.trim();
@@ -204,13 +205,15 @@ async function loginSession(saved = null) {
     draftMode = saved?.draftMode === true && me.ai_draft_enabled === true;
     lastActivity = saved?.lastActivity || Date.now();
     sessionActive = true;
+    accountLoginInfo={auth_mode:me.auth_mode||'legacy',is_admin:!!me.is_admin};
+    document.dispatchEvent(new CustomEvent('autolandscape:login', {detail: accountLoginInfo}));
     saveSession();
     scheduleIdleLogout();
     $("token").value = "";
     $("login-panel").hidden = true;
     $("workspace").hidden = false;
-    $("user-label").textContent = me.id;
-    $("user-avatar").textContent = String(me.id).slice(0, 1).toUpperCase();
+    $("user-label").textContent = me.username || me.id;
+    $("user-avatar").textContent = String(me.username || me.id).slice(0, 1).toUpperCase();
     aiEnabled = !!me.ai_enabled;
     $("connection").textContent = "已连接";
     $("ai-badge").textContent = me.ai_enabled ? "可用" : "暂不可用";
@@ -242,6 +245,7 @@ $("login").onclick = () => loginSession();
 $("logout").onclick = () => {
   epoch++;
   sessionActive = false;
+  accountLoginInfo = null;
   clearTimeout(idleTimer);
   try {
     sessionStorage.removeItem(SESSION_KEY);
@@ -1083,7 +1087,7 @@ $("sidebar-toggle").onclick = () => {
 $("sidebar-close").onclick = closeSidebar;
 $("sidebar-backdrop").onclick = closeSidebar;
 $("token").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") $("login").click();
+  if (e.key === "Enter") $("legacy-login").click();
 });
 $("chat-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -1194,4 +1198,6 @@ async function restoreSession() {
     } catch {}
   }
 }
-restoreSession();
+const accountActionURL = new URLSearchParams(location.hash.slice(1));
+const accountActionQuery = new URLSearchParams(location.search);
+if (!['verify','reset'].some(k => accountActionURL.has(k)||accountActionQuery.has(k))) restoreSession();

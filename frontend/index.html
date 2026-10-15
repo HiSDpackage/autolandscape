@@ -6,7 +6,7 @@
     <meta name="referrer" content="no-referrer" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; connect-src https://api.autolandscape.win http://127.0.0.1:8787; img-src 'self' blob:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+      content="default-src 'self'; connect-src https://api.autolandscape.win http://127.0.0.1:8787 https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; img-src 'self' blob:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'"
     />
     <title>AutoLandscape · 智能体工作台</title>
     <link rel="stylesheet" href="./vendor/katex.min.css" />
@@ -30,19 +30,74 @@
           <p class="eyebrow">AUTOLANDSCAPE</p>
           <h2>进入你的研究工作台</h2>
           <p class="muted">与智能体讨论模型，探索解景观。</p>
-          <label for="token">个人访问令牌</label
-          ><input
-            id="token"
-            type="password"
-            autocomplete="off"
-            placeholder="输入你的访问令牌"
-          /><button id="login" class="primary full">
-            进入工作台 <span aria-hidden="true">→</span>
-          </button>
-          <p class="small">
-            使用管理员提供的个人访问令牌。<br />普通刷新保留登录，连续30分钟无操作后退出。
-          </p>
+          <div id="account-login-form">
+            <label for="account-username">用户名</label>
+            <input id="account-username" autocomplete="username" placeholder="用户名" maxlength="32" />
+            <label for="account-password">密码</label>
+            <input id="account-password" type="password" autocomplete="current-password" placeholder="密码" />
+            <div id="ts-login" class="turnstile-host"></div>
+            <button id="login" class="primary full">登录工作台 <span aria-hidden="true">→</span></button>
+            <p class="account-links">
+              <button type="button" id="show-register">申请注册</button>
+              <button type="button" id="show-forgot">忘记密码</button>
+              <button type="button" id="show-resend">重发验证邮件</button>
+            </p>
+            <p class="small">普通刷新保持会话；连续30分钟无活动或登录满8小时需重新登录。</p>
+            <details class="legacy-entry">
+              <summary>已有访问令牌的旧用户：迁移入口</summary>
+              <label for="token">旧个人访问令牌</label>
+              <input id="token" type="password" autocomplete="off" placeholder="仅用于旧账号迁移" />
+              <button id="legacy-login" type="button">使用旧令牌进入</button>
+            </details>
+          </div>
         </div>
+        <section id="account-register-panel" class="account-form-panel" hidden>
+          <h2>申请注册 AutoLandscape</h2>
+          <p class="small">邮箱验证后仍需管理员审核，通过前无法使用计算及 AI 服务。</p>
+          <form id="account-register-form">
+            <label>姓名<input name="display_name" required maxlength="120" /></label>
+            <label>邮箱<input name="email" required type="email" autocomplete="email" maxlength="240" /></label>
+            <label>单位<input name="institution" required maxlength="160" /></label>
+            <label>职务 / 身份<input name="position_title" required maxlength="120" /></label>
+            <label>研究方向<textarea name="research_area" required maxlength="500"></textarea></label>
+            <label>注册用途<textarea name="use_case" required maxlength="1500"></textarea></label>
+            <label>用户名<input name="username" required autocomplete="username" pattern="[A-Za-z][A-Za-z0-9_-]{2,31}" /></label>
+            <label>初始密码<input name="password" type="password" required minlength="7" maxlength="128" autocomplete="new-password" /></label>
+            <label>确认密码<input name="confirm_password" type="password" required minlength="7" maxlength="128" autocomplete="new-password" /></label>
+            <label class="account-check"><input type="checkbox" name="consent" required />我同意提供以上申请资料用于身份审核，并遵守网站的计算资源使用规则。</label>
+            <div id="ts-register" class="turnstile-host"></div>
+            <button class="primary full" type="submit">提交注册申请</button>
+          </form>
+          <button id="register-back" type="button" class="quiet">返回登录</button>
+        </section>
+        <section id="account-forgot-panel" class="account-form-panel" hidden>
+          <h2>找回密码</h2><p class="small">填写已验证邮箱。若存在账号，将收到30分钟内有效的重置链接。</p>
+          <form id="account-forgot-form">
+            <label>邮箱<input type="email" name="email" required /></label>
+            <div id="ts-forgot" class="turnstile-host"></div>
+            <button class="primary full" type="submit">发送重置邮件</button>
+          </form><button id="forgot-back" class="quiet" type="button">返回登录</button>
+        </section>
+        <section id="account-resend-panel" class="account-form-panel" hidden>
+          <h2>重新发送邮箱验证</h2>
+          <p class="small">若申请或旧账号绑定尚未验证，我们将发送一条新的24小时有效链接。</p>
+          <form id="account-resend-form">
+            <label>邮箱<input name="email" type="email" required /></label>
+            <div id="ts-resend" class="turnstile-host"></div>
+            <button type="submit" class="primary full">重新发送验证邮件</button>
+          </form>
+          <button id="resend-back" class="quiet" type="button">返回登录</button>
+        </section>
+        <section id="account-link-panel" class="account-form-panel" hidden>
+          <h2 id="account-link-title">确认邮箱</h2>
+          <p id="account-link-note" class="small"></p>
+          <div id="account-link-reset" hidden>
+            <label>新密码<input id="reset-new-password" type="password" minlength="7" autocomplete="new-password" /></label>
+            <label>再次输入<input id="reset-confirm-password" type="password" minlength="7" autocomplete="new-password" /></label>
+          </div>
+          <button id="account-link-confirm" class="primary full" type="button">确认</button>
+          <button id="account-link-back" class="quiet" type="button">返回登录</button>
+        </section>
         <span class="login-foot">AutoLandscape · 解景观研究助手</span>
       </div>
     </section>
@@ -90,6 +145,8 @@
               ><span class="user-more">···</span>
             </summary>
             <div class="user-dropdown">
+              <button id="account-manage" type="button">账号设置 / 修改密码</button>
+              <button id="admin-applications" type="button" hidden>审核注册申请</button>
               <button id="logout">
                 退出登录 <span aria-hidden="true">↗</span>
               </button>
@@ -544,11 +601,45 @@
         </div>
       </main>
     </section>
+    <dialog id="account-settings-dialog" class="account-dialog">
+      <h2>账户设置</h2>
+      <section id="account-change-wrap" hidden>
+        <form id="account-change-form">
+          <label>当前密码<input name="current_password" type="password" required autocomplete="current-password" /></label>
+          <label>新密码<input name="new_password" type="password" minlength="7" maxlength="128" required autocomplete="new-password" /></label>
+          <label>重复新密码<input name="confirm_password" type="password" minlength="7" required autocomplete="new-password" /></label>
+          <button type="submit" class="primary">修改密码（退出所有设备）</button>
+        </form>
+      </section>
+      <section id="account-claim-wrap" hidden>
+        <p class="small">将原有身份及历史任务关联到新的用户名密码。邮箱验证通过后启用。</p>
+        <form id="account-claim-form">
+          <label>用户名<input name="username" required pattern="[A-Za-z][A-Za-z0-9_-]{2,31}" /></label>
+          <label>姓名<input name="display_name" required /></label>
+          <label>邮箱<input name="email" required type="email" /></label>
+          <label>密码<input name="password" required type="password" minlength="7" autocomplete="new-password" /></label>
+          <div id="ts-claim" class="turnstile-host"></div>
+          <button type="submit" class="primary">发送旧账号绑定验证邮件</button>
+        </form>
+      </section>
+      <button type="button" id="account-settings-close" class="quiet">关闭</button>
+    </dialog>
+    <dialog id="account-review-dialog" class="account-dialog">
+      <h2>管理员审核注册申请</h2>
+      <div id="account-review-list" class="review-list"></div>
+      <section id="account-review-detail" hidden>
+        <dl id="account-review-fields" class="review-fields"></dl>
+        <button type="button" id="account-review-approve" class="primary">批准申请</button>
+        <button type="button" id="account-review-reject" class="quiet">拒绝申请</button>
+      </section>
+      <button type="button" id="account-review-close" class="quiet">关闭</button>
+    </dialog>
     <script src="./config.js"></script>
     <script src="./vendor/marked.umd.js"></script>
     <script src="./vendor/purify.min.js"></script>
     <script src="./vendor/katex.min.js"></script>
     <script src="./render.js"></script>
     <script src="./app.js"></script>
+    <script src="./accounts.js"></script>
   </body>
 </html>

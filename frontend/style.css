@@ -1369,3 +1369,27 @@ pre {
 }
 #ai-generate.is-selected:hover { background: #1d4ed8; }
 #ai-generate:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+
+/* Account and approval UI extension: does not alter scientific workspace layout. */
+#account-login-form label,.account-form-panel label,.account-dialog label {display:block;font-size:0.85rem;font-weight:600;margin-top:12px}
+#account-login-form input,.account-form-panel input:not([type="checkbox"]),.account-form-panel textarea,
+.account-dialog input {display:block;width:100%;margin:5px 0 10px;padding:10px 12px;border-radius:9px;border:1px solid #becbd2;background:#fff;color:#15212e;font:inherit}
+.account-form-panel {width:min(430px,100%);background:#fff;border-radius:16px;padding:22px;box-shadow:0 5px 30px #0000000d;max-height:80vh;overflow:auto}
+.account-form-panel h2 {font-size:1.3rem;margin:0 0 8px}
+.account-form-panel textarea {min-height:65px;resize:vertical}
+.account-check {display:flex!important;align-items:flex-start;gap:8px;line-height:1.4;font-weight:400!important}
+.account-check input {margin-top:3px}
+.account-links {display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;justify-content:center}
+.account-links button,.legacy-entry button {color:#166d82;background:transparent;border:none;cursor:pointer;font:inherit}
+.legacy-entry {margin-top:20px;border-top:1px solid #e3e8eb;padding-top:12px;font-size:0.8rem}
+.legacy-entry summary{cursor:pointer}
+.turnstile-host {min-height:15px;margin:10px 0 12px}
+.account-dialog {border:1px solid #d7e0e5;background:#fff;border-radius:18px;width:min(540px,96vw);padding:26px;max-height:85vh;overflow:auto;box-shadow:0 20px 65px #0003;color:#1c2a33}
+.account-dialog::backdrop {background:#07192483}
+.account-dialog h2 {margin:0 0 15px}
+.account-dialog button {margin:9px 8px 0 0}
+.review-list {display:grid;gap:8px;margin:12px 0}
+.review-list button {text-align:left;padding:10px;border:1px solid #bfcbd1;background:#f6fafb;border-radius:9px;cursor:pointer}
+.review-fields {display:grid;grid-template-columns:125px 1fr;gap:7px 10px;overflow-wrap:anywhere}
+.review-fields dt {font-weight:700;color:#667780}.review-fields dd{margin:0}
+[hidden] {display:none!important}
