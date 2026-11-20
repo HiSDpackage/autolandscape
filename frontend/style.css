@@ -727,6 +727,31 @@ small,
   color: #92998b;
   align-items: center;
 }
+#ai-source {
+  width: auto;
+}
+#ai-personal-settings {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: end;
+}
+#ai-personal-settings > label {
+  flex: 1 1 140px;
+}
+#ai-personal-settings > #ai-personal-region-field {
+  flex: 0 1 auto;
+}
+#ai-source,
+#ai-personal-settings input,
+#ai-personal-settings select {
+  padding: 6px 8px;
+}
+#ai-personal-settings > p {
+  flex-basis: 100%;
+  margin: 0;
+}
 .check {
   display: flex;
   align-items: flex-start;

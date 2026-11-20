@@ -69,7 +69,7 @@ async function call(path, method = "GET", data = null, extra = {}) {
     expireSession();
     throw Error("登录已过期，请重新登录。");
   }
-  const isAI = path === "/v1/ai/chat";
+  const isAI = path === "/v1/ai/chat" || path === "/v1/ai/personal/chat";
   const requestTimeoutMs = isAI ? 330000 : cfg.requestTimeoutMs;
   const session = epoch,
     c = new AbortController(),
@@ -243,6 +243,8 @@ async function loginSession(saved = null) {
 }
 $("login").onclick = () => loginSession();
 $("logout").onclick = () => {
+  $("ai-source").value = "platform";
+  updateAISource();
   epoch++;
   sessionActive = false;
   accountLoginInfo = null;
@@ -701,6 +703,25 @@ function asksToEditDraft(message) {
   const action = /(?:帮我|替我|请|直接).{0,40}(?:改|调整|更新|生成|设置|创建|写)|把.{0,40}改(?:成|为)|^(?:修改|调整|更新|生成|创建|设置).{0,40}/;
   return target.test(message) && action.test(message);
 }
+function updateAISource() {
+  const source = $("ai-source");
+  $("ai-personal-settings").hidden = source.value === "platform";
+  $("ai-personal-region-field").hidden = !source.selectedOptions[0].hasAttribute("data-regional");
+  $("ai-personal-region").value = "cn";
+  $("ai-personal-model").value = "";
+  $("ai-personal-key").value = "";
+  $("ai-consent").checked = false;
+}
+$("ai-source").onchange = updateAISource;
+$("ai-personal-region").onchange = () => {
+  $("ai-personal-key").value = "";
+  $("ai-consent").checked = false;
+};
+$("ai-personal-clear").onclick = () => {
+  $("ai-personal-key").value = "";
+  $("ai-personal-key").focus();
+};
+
 async function sendAI(mode) {
   const button = $("chat-send");
   const requestEpoch = epoch;
@@ -721,6 +742,20 @@ async function sendAI(mode) {
       throw Error("如需修改任务 JSON，请先点击“生成配置草案”开启蓝色模式，再点击发送。你的要求仍保留在输入框中。");
     }
     if (!$("ai-consent").checked) throw Error("请先勾选允许发送给外部模型");
+    const source = $("ai-source");
+    const provider = source.value;
+    const personal = provider === "platform" ? null : {
+      provider,
+      ...(source.selectedOptions[0].hasAttribute("data-regional")
+        ? { region: $("ai-personal-region").value }
+        : {}),
+      model: $("ai-personal-model").value.trim(),
+      api_key: $("ai-personal-key").value.trim()
+    };
+    const aiSource = personal ? "personal" : "platform";
+    const providerLabel = personal ? source.selectedOptions[0].textContent.trim() : "";
+    if (personal && (!personal.model || !personal.api_key))
+      throw Error("请填写所选服务商的模型 ID 和 API Key");
     if (mode === "draft" && !aiDraftEnabled)
       throw Error("当前暂不支持生成草案，请联系管理员");
     if (mode === "draft" && !$("ai-context").checked)
@@ -752,10 +787,12 @@ async function sendAI(mode) {
     setAIControls();
     renderChat(pending);
     try {
-      const r = await call("/v1/ai/chat", "POST", {
+      const r = await call(personal ? "/v1/ai/personal/chat" : "/v1/ai/chat", "POST", {
         mode,
+        ai_source: aiSource,
+        ...(personal ? { personal_ai: personal } : {}),
         messages: [
-          ...chat,
+          ...chat.map(({ role, content }) => ({ role, content })),
           {
             ...pending,
             content:
@@ -774,6 +811,8 @@ async function sendAI(mode) {
         ...(context ? { context } : {}),
         ...(jobId ? { job_id: jobId } : {}),
       });
+      if (personal && r.ai_source !== "personal")
+        throw Error("后端未确认使用个人 AI，请检查是否已部署新版 Worker");
       if (context) {
         if (r.context_attached !== true || !r.context_receipt)
           throw Error("本轮草案未成功读取，请重新选择附带草案后再试");
@@ -826,7 +865,7 @@ async function sendAI(mode) {
         }
       }
       if (mode !== "draft") setAIActionStatus("已收到回答。文字建议不会自动修改任务草案。");
-      chat.push(pending, { role: "assistant", content: r.message });
+      chat.push(pending, { role: "assistant", content: r.message, aiSource, providerLabel });
       saveSession();
       $("chat-input").value = "";
       renderChat();
@@ -1007,6 +1046,8 @@ function setAIControls() {
   $("chat-send").setAttribute("aria-label", $("chat-send").title);
   $("chat-input").disabled = !aiEnabled || aiPending;
   $("new-chat").disabled = aiPending;
+  $("ai-source").disabled = aiPending;
+  $("ai-personal-region").disabled = aiPending;
   $("chat-state").textContent = aiPending
     ? "正在思考…"
     : draftMode
@@ -1021,7 +1062,12 @@ function renderChat(pending = null, error = null) {
     const row = el("article", undefined, "chat-entry " + m.role),
       name = el("div", undefined, "message-author");
     if (m.role === "assistant") name.append(el("span", "◈", "mini-mark"));
-    name.append(el("span", m.role === "user" ? "你" : "AutoLandscape"));
+    let author = "AutoLandscape";
+    if (m.role === "user") author = "你";
+    else if (m.aiSource === "platform") author = "平台 AI";
+    else if (m.aiSource === "personal")
+      author = m.providerLabel ? "个人 AI · " + m.providerLabel : "个人 AI";
+    name.append(el("span", author));
     row.append(name);
     const body = el("div", undefined, "message-body");
     if (m.role === "assistant") window.renderAssistant(body, m.content);
