@@ -268,36 +268,9 @@
               </div>
               <p id="ai-action-status" class="small" role="status" aria-live="polite" hidden></p>
               <div class="consent-row">
-                <label for="ai-source">AI 接口</label>
-                <select id="ai-source">
-                  <option value="platform">平台 AI</option>
-                  <optgroup label="个人 AI">
-                    <option value="deepseek">DeepSeek</option>
-                    <option value="gemini">Gemini</option>
-                    <option value="gpt">GPT</option>
-                    <option value="kimi" data-regional>Kimi</option>
-                    <option value="qwen" data-regional>Qwen</option>
-                  </optgroup>
-                </select>
-                <div id="ai-personal-settings" hidden>
-                  <label id="ai-personal-region-field" hidden>
-                    API Key 地区
-                    <select id="ai-personal-region">
-                      <option value="cn">中国大陆</option>
-                      <option value="intl">国际</option>
-                    </select>
-                  </label>
-                  <label for="ai-personal-model">
-                    模型 ID
-                    <input id="ai-personal-model" type="text" maxlength="200" autocomplete="off" spellcheck="false">
-                  </label>
-                  <label for="ai-personal-key">
-                    API Key
-                    <input id="ai-personal-key" type="password" maxlength="512" autocomplete="off" spellcheck="false">
-                  </label>
-                  <button id="ai-personal-clear" type="button" class="quiet">清除 Key</button>
-                  <p class="small">分流和回答使用所选服务商的账户额度。Key 经平台后端转发，切换服务商或地区、刷新页面或退出登录时清除。</p>
-                </div>
+                <label for="ai-source">回答模型</label>
+                <select id="ai-source"><option value="platform">平台 AI</option></select>
+                <button id="ai-model-settings" type="button" class="quiet">模型服务</button>
                 <label class="check"
                   ><input
                     type="checkbox"
@@ -631,6 +604,89 @@
         </div>
       </main>
     </section>
+    <dialog id="ai-model-dialog" class="account-dialog">
+      <form id="ai-model-form">
+        <h2>模型服务</h2>
+        <fieldset id="ai-model-fields">
+          <div class="ai-model-grid">
+            <label>配置
+              <select id="ai-profile-editor"><option value="">新增模型</option></select>
+            </label>
+            <label>服务商
+              <select id="ai-provider">
+                <option value="deepseek">DeepSeek</option>
+                <option value="gemini">Gemini</option>
+                <option value="gpt">GPT</option>
+                <option value="kimi" data-regional>Kimi</option>
+                <option value="qwen" data-regional>Qwen</option>
+                <option value="custom">自定义服务商</option>
+              </select>
+            </label>
+            <label id="ai-personal-region-field" hidden>API Key 地区
+              <select id="ai-personal-region">
+                <option value="cn">中国大陆</option>
+                <option value="intl">国际</option>
+              </select>
+            </label>
+            <label>显示名称
+              <input id="ai-profile-name" maxlength="60" autocomplete="off" placeholder="留空使用模型 ID">
+            </label>
+            <label id="ai-personal-url-field" class="ai-model-wide" hidden>API Base URL
+              <input id="ai-personal-url" type="url" maxlength="512" autocomplete="off" spellcheck="false" placeholder="https://api.example.com/v1">
+              <span class="small">填写管理员登记的 HTTPS API 基础地址。</span>
+            </label>
+            <label>模型 ID
+              <input id="ai-personal-model" list="ai-model-list" required maxlength="200" autocomplete="off" spellcheck="false">
+              <datalist id="ai-model-list"></datalist>
+            </label>
+            <label>API Key
+              <input id="ai-personal-key" type="password" maxlength="512" autocomplete="off" spellcheck="false">
+            </label>
+          </div>
+          <div class="button-row">
+            <button id="ai-model-fetch" type="button">获取模型</button>
+            <button id="ai-model-test" type="button">测试连接</button>
+            <button id="ai-personal-clear" type="button" class="quiet">清除 Key</button>
+          </div>
+          <p class="small">获取模型和测试会将 Key 发给所选服务商。测试会发送一条简短消息，可能产生费用。</p>
+          <details>
+            <summary>高级参数</summary>
+            <div class="ai-model-grid">
+              <label>最大输出 tokens
+                <input id="ai-model-max-tokens" type="number" min="1" max="100000" step="1" placeholder="使用项目默认值">
+              </label>
+              <label id="ai-token-field-row" hidden>输出上限字段
+                <select id="ai-token-field">
+                  <option value="max_tokens">max_tokens</option>
+                  <option value="max_completion_tokens">max_completion_tokens</option>
+                </select>
+              </label>
+              <label id="ai-model-temperature-row" hidden>温度
+                <input id="ai-model-temperature" type="number" min="0" max="2" step="any" placeholder="服务商默认">
+              </label>
+              <label id="ai-model-reasoning-row" hidden>推理强度
+                <select id="ai-model-reasoning">
+                  <option value="">服务商默认</option>
+                  <option value="none">关闭</option>
+                  <option value="low">低</option>
+                  <option value="high">高</option>
+                  <option value="max">最高</option>
+                </select>
+              </label>
+            </div>
+          </details>
+          <p class="small">配置保存在当前浏览器。Key 仅用于当前选中的个人模型，切换模型、刷新或退出时清除。</p>
+          <p id="ai-model-status" role="status" aria-live="polite" class="small" hidden></p>
+          <div class="button-row">
+            <button id="ai-model-remove" type="button" class="quiet" hidden>删除此配置</button>
+            <button type="submit">保存并使用</button>
+          </div>
+        </fieldset>
+        <div class="button-row">
+          <button id="ai-model-close" type="button" class="quiet">关闭</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="account-settings-dialog" class="account-dialog">
       <h2>账户设置</h2>
       <section id="account-change-wrap" hidden>

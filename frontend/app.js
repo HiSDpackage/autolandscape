@@ -70,7 +70,8 @@ async function call(path, method = "GET", data = null, extra = {}) {
     throw Error("登录已过期，请重新登录。");
   }
   const isAI = path === "/v1/ai/chat" || path === "/v1/ai/personal/chat";
-  const requestTimeoutMs = isAI ? 330000 : cfg.requestTimeoutMs;
+  const aiSetup = path === "/v1/ai/personal/test" || path === "/v1/ai/personal/models";
+  const requestTimeoutMs = isAI ? 330000 : aiSetup ? 25000 : cfg.requestTimeoutMs;
   const session = epoch,
     c = new AbortController(),
     timeout = setTimeout(() => c.abort(), requestTimeoutMs);
@@ -102,6 +103,7 @@ async function call(path, method = "GET", data = null, extra = {}) {
     if (session !== epoch) throw Error("SESSION_CHANGED");
     return result;
   } catch (e) {
+    if (aiSetup && e.name === "AbortError") throw Error("请求服务商超时，请稍后再试。");
     if (isAI && e.name === "AbortError") {
       throw Error(
         "AI响应等待超过5分30秒，网页已停止等待；服务可能仍在处理，本次额度状态尚不确定。请勿立即重复发送，也不要据此认为额度已退回。",
@@ -215,6 +217,7 @@ async function loginSession(saved = null) {
     $("user-label").textContent = me.username || me.id;
     $("user-avatar").textContent = String(me.username || me.id).slice(0, 1).toUpperCase();
     aiEnabled = !!me.ai_enabled;
+    loadAIProfiles(me.id);
     $("connection").textContent = "已连接";
     $("ai-badge").textContent = me.ai_enabled ? "可用" : "暂不可用";
     $("chat-input").placeholder = me.ai_enabled
@@ -243,7 +246,11 @@ async function loginSession(saved = null) {
 }
 $("login").onclick = () => loginSession();
 $("logout").onclick = () => {
-  $("ai-source").value = "platform";
+  $("ai-model-dialog").close();
+  $("ai-personal-key").value = "";
+  aiProfileStorage = "";
+  aiProfiles = [];
+  renderAIProfiles();
   updateAISource();
   epoch++;
   sessionActive = false;
@@ -703,24 +710,234 @@ function asksToEditDraft(message) {
   const action = /(?:帮我|替我|请|直接).{0,40}(?:改|调整|更新|生成|设置|创建|写)|把.{0,40}改(?:成|为)|^(?:修改|调整|更新|生成|创建|设置).{0,40}/;
   return target.test(message) && action.test(message);
 }
+let aiProfiles = [];
+let aiProfileStorage = "";
+let aiProfileKey = "";
+let aiSettingsRequest = 0;
+let aiEditingId = "";
+
+function loadAIProfiles(accountId) {
+  aiProfileStorage = "autolandscape.model-services.v1:" + accountId;
+  aiProfiles = [];
+  try {
+    const profiles = JSON.parse(localStorage.getItem(aiProfileStorage) || "[]");
+    if (Array.isArray(profiles)) aiProfiles = profiles.filter((profile) =>
+      typeof profile?.id === "string" && typeof profile.model === "string" &&
+      Array.from($("ai-provider").options).some((option) => option.value === profile.provider)
+    );
+  } catch {}
+  renderAIProfiles();
+  updateAISource();
+}
+
+function persistAIProfiles() {
+  try {
+    localStorage.setItem(aiProfileStorage, JSON.stringify(aiProfiles));
+  } catch {
+    notify("浏览器无法保存模型配置。当前页面仍可使用。", true);
+  }
+}
+
+function renderAIProfiles(active = "platform") {
+  const order = Array.from($("ai-provider").options, (option) => option.value);
+  const profiles = [...aiProfiles].sort((a, b) =>
+    order.indexOf(a.provider) - order.indexOf(b.provider) ||
+    (a.name || a.model).localeCompare(b.name || b.model)
+  );
+  const source = $("ai-source"), editor = $("ai-profile-editor");
+  source.options.length = 1;
+  editor.options.length = 1;
+  for (const profile of profiles) {
+    const provider = $("ai-provider").options[order.indexOf(profile.provider)].textContent.trim();
+    const label = profile.name || profile.model;
+    const option = el("option", provider + " · " + label);
+    option.value = profile.id;
+    source.append(option);
+    editor.append(option.cloneNode(true));
+  }
+  source.value = active;
+}
+
 function updateAISource() {
-  const source = $("ai-source");
-  $("ai-personal-settings").hidden = source.value === "platform";
-  $("ai-personal-region-field").hidden = !source.selectedOptions[0].hasAttribute("data-regional");
-  $("ai-personal-region").value = "cn";
-  $("ai-personal-model").value = "";
-  $("ai-personal-key").value = "";
+  aiProfileKey = "";
   $("ai-consent").checked = false;
 }
 $("ai-source").onchange = updateAISource;
-$("ai-personal-region").onchange = () => {
+
+function modelSettingsStatus(message = "", error = false) {
+  const status = $("ai-model-status");
+  status.textContent = message;
+  status.hidden = !message;
+  status.className = error ? "small bad" : "small";
+}
+
+function updateModelFields() {
+  const provider = $("ai-provider").value, model = $("ai-personal-model").value.trim();
+  $("ai-personal-region-field").hidden = !$("ai-provider").selectedOptions[0].hasAttribute("data-regional");
+  $("ai-personal-url-field").hidden = provider !== "custom";
+  $("ai-token-field-row").hidden = provider !== "custom";
+  $("ai-model-reasoning-row").hidden =
+    provider !== "deepseek" || !/^deepseek-(?:v4(?:\.1)?-)?(?:flash|pro)(?:-\d+)?$/i.test(model);
+  $("ai-model-temperature-row").hidden = !(provider === "custom" ||
+    provider === "gpt" && /^gpt-4(?:[.o-]|$)/i.test(model));
+}
+
+function editAIProfile(id) {
+  aiEditingId = id;
+  const profile = aiProfiles.find((item) => item.id === id);
+  $("ai-profile-editor").value = id;
+  $("ai-provider").value = profile?.provider || "deepseek";
+  $("ai-profile-name").value = profile?.name || "";
+  $("ai-personal-region").value = profile?.region || "cn";
+  $("ai-personal-url").value = profile?.base_url || "";
+  $("ai-personal-model").value = profile?.model || "";
+  $("ai-personal-key").value = id === $("ai-source").value ? aiProfileKey : "";
+  $("ai-token-field").value = profile?.token_field || "max_tokens";
+  $("ai-model-max-tokens").value = profile?.generation?.max_tokens ?? "";
+  $("ai-model-temperature").value = profile?.generation?.temperature ?? "";
+  $("ai-model-reasoning").value = profile?.generation?.reasoning_effort ?? "";
+  $("ai-model-remove").hidden = !profile;
+  $("ai-model-list").replaceChildren();
+  modelSettingsStatus();
+  updateModelFields();
+}
+
+function invalidateModelConnection() {
   $("ai-personal-key").value = "";
-  $("ai-consent").checked = false;
+  $("ai-model-reasoning").value = "";
+  $("ai-model-temperature").value = "";
+  $("ai-model-list").replaceChildren();
+  modelSettingsStatus();
+  updateModelFields();
+}
+$("ai-provider").onchange = invalidateModelConnection;
+$("ai-personal-region").onchange = invalidateModelConnection;
+$("ai-personal-url").oninput = invalidateModelConnection;
+$("ai-personal-model").oninput = () => {
+  updateModelFields();
+  modelSettingsStatus();
+};
+$("ai-profile-editor").onchange = () => editAIProfile($("ai-profile-editor").value);
+$("ai-model-settings").onclick = () => {
+  const selected = $("ai-source").value;
+  $("ai-model-fields").disabled = false;
+  editAIProfile(selected === "platform" ? "" : selected);
+  $("ai-model-dialog").showModal();
+};
+$("ai-model-close").onclick = () => $("ai-model-dialog").close();
+$("ai-model-dialog").onclose = () => {
+  if ($("ai-model-dialog").open) return;
+  aiSettingsRequest++;
+  $("ai-personal-key").value = "";
 };
 $("ai-personal-clear").onclick = () => {
   $("ai-personal-key").value = "";
+  if (aiEditingId === $("ai-source").value) updateAISource();
   $("ai-personal-key").focus();
 };
+
+function readAIProfile() {
+  const baseUrl = $("ai-personal-url").value.trim();
+  return {
+    provider: $("ai-provider").value,
+    name: $("ai-profile-name").value.trim(),
+    model: $("ai-personal-model").value.trim(),
+    ...(!$("ai-personal-region-field").hidden ? { region: $("ai-personal-region").value } : {}),
+    ...(!$("ai-personal-url-field").hidden ? {
+      base_url: baseUrl,
+      token_field: $("ai-token-field").value
+    } : {}),
+    generation: {
+      ...($("ai-model-max-tokens").value ? { max_tokens: $("ai-model-max-tokens").valueAsNumber } : {}),
+      ...(!$("ai-model-temperature-row").hidden && $("ai-model-temperature").value
+        ? { temperature: $("ai-model-temperature").valueAsNumber } : {}),
+      ...(!$("ai-model-reasoning-row").hidden && $("ai-model-reasoning").value
+        ? { reasoning_effort: $("ai-model-reasoning").value } : {})
+    }
+  };
+}
+
+function personalAIRequest({ provider, region, model, base_url, token_field, generation }, apiKey) {
+  return { provider, region, model, base_url, token_field, generation, api_key: apiKey };
+}
+
+function validModelForm(profile, listModels) {
+  if (profile.provider === "custom" && !/^https:\/\//i.test(profile.base_url)) {
+    modelSettingsStatus("请输入服务商的 HTTPS API Base URL。", true);
+    $("ai-personal-url").focus();
+    return false;
+  }
+  if (listModels) return $("ai-personal-url-field").hidden || $("ai-personal-url").reportValidity();
+  if ($("ai-model-form").reportValidity() && /^[a-zA-Z0-9._:/@-]{1,200}$/.test(profile.model))
+    return true;
+  modelSettingsStatus("请检查模型 ID 和高级参数。", true);
+  return false;
+}
+
+$("ai-model-form").onsubmit = (event) => {
+  event.preventDefault();
+  const profile = readAIProfile();
+  if (!validModelForm(profile, false)) return;
+  profile.id = aiEditingId || crypto.randomUUID();
+  aiProfiles = aiProfiles.filter((item) => item.id !== profile.id);
+  aiProfiles.push(profile);
+  persistAIProfiles();
+  renderAIProfiles(profile.id);
+  updateAISource();
+  aiProfileKey = $("ai-personal-key").value.trim();
+  $("ai-model-dialog").close();
+};
+$("ai-model-remove").onclick = () => {
+  const active = $("ai-source").value;
+  aiProfiles = aiProfiles.filter((profile) => profile.id !== aiEditingId);
+  persistAIProfiles();
+  if (active === aiEditingId) updateAISource();
+  renderAIProfiles(active === aiEditingId ? "platform" : active);
+  editAIProfile("");
+};
+
+async function checkAIProfile(listModels) {
+  const profile = readAIProfile();
+  if (!validModelForm(profile, listModels)) return;
+  const apiKey = $("ai-personal-key").value.trim();
+  if (!apiKey) {
+    modelSettingsStatus("请先填写 API Key。", true);
+    $("ai-personal-key").focus();
+    return;
+  }
+  const request = ++aiSettingsRequest;
+  const current = () => request === aiSettingsRequest && $("ai-model-dialog").open;
+  $("ai-model-fields").disabled = true;
+  modelSettingsStatus(listModels ? "正在获取模型…" : "正在测试连接…");
+  try {
+    const response = await call("/v1/ai/personal/" + (listModels ? "models" : "test"), "POST", {
+      ai_source: "personal",
+      allow_external: true,
+      personal_ai: personalAIRequest(profile, apiKey)
+    });
+    if (!current()) return;
+    if (listModels && Array.isArray(response.models)) {
+      $("ai-model-list").replaceChildren(...response.models.map((model) => {
+        const option = el("option");
+        option.value = model;
+        return option;
+      }));
+      modelSettingsStatus(response.models.length
+        ? "已获取 " + response.models.length + " 个模型，可在模型 ID 输入框中选择。"
+        : "接口未返回可选模型，可手动填写模型 ID。");
+    } else if (!listModels && response.ok === true) {
+      modelSettingsStatus("连接成功，所选模型已返回文本。");
+    } else {
+      modelSettingsStatus(response.message || "服务暂不可用。", true);
+    }
+  } catch (error) {
+    if (current()) modelSettingsStatus(error.message, true);
+  } finally {
+    if (current()) $("ai-model-fields").disabled = false;
+  }
+}
+$("ai-model-fetch").onclick = () => checkAIProfile(true);
+$("ai-model-test").onclick = () => checkAIProfile(false);
 
 async function sendAI(mode) {
   const button = $("chat-send");
@@ -743,19 +960,14 @@ async function sendAI(mode) {
     }
     if (!$("ai-consent").checked) throw Error("请先勾选允许发送给外部模型");
     const source = $("ai-source");
-    const provider = source.value;
-    const personal = provider === "platform" ? null : {
-      provider,
-      ...(source.selectedOptions[0].hasAttribute("data-regional")
-        ? { region: $("ai-personal-region").value }
-        : {}),
-      model: $("ai-personal-model").value.trim(),
-      api_key: $("ai-personal-key").value.trim()
-    };
+    const profile = aiProfiles.find((item) => item.id === source.value);
+    if (source.value !== "platform" && !profile)
+      throw Error("请选择可用的回答模型。");
+    if (profile && !aiProfileKey)
+      throw Error("请打开「模型服务」，填写所选模型的 API Key 并保存。");
+    const personal = profile ? personalAIRequest(profile, aiProfileKey) : null;
     const aiSource = personal ? "personal" : "platform";
     const providerLabel = personal ? source.selectedOptions[0].textContent.trim() : "";
-    if (personal && (!personal.model || !personal.api_key))
-      throw Error("请填写所选服务商的模型 ID 和 API Key");
     if (mode === "draft" && !aiDraftEnabled)
       throw Error("当前暂不支持生成草案，请联系管理员");
     if (mode === "draft" && !$("ai-context").checked)
@@ -1047,7 +1259,7 @@ function setAIControls() {
   $("chat-input").disabled = !aiEnabled || aiPending;
   $("new-chat").disabled = aiPending;
   $("ai-source").disabled = aiPending;
-  $("ai-personal-region").disabled = aiPending;
+  $("ai-model-settings").disabled = !aiEnabled || aiPending;
   $("chat-state").textContent = aiPending
     ? "正在思考…"
     : draftMode
