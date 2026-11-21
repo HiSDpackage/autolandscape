@@ -41,11 +41,8 @@ let token = "",
   epoch = 0,
   restartKey = null,
   restartSignature = null,
-  aiProposal = null,
   aiPending = false,
-  aiDraftEnabled = false,
-  aiJobContextEnabled = false,
-  draftMode = false;
+  aiJobContextEnabled = false;
 let noticeTimer;
 function notify(s, bad = false) {
   clearTimeout(noticeTimer);
@@ -122,7 +119,7 @@ async function guarded(button, fn) {
     await fn();
   } catch (e) {
     if (session === epoch) {
-      if (button.id === "chat-send" || button.id === "ai-generate")
+      if (button.id === "chat-send")
         setAIActionStatus(e.message, true);
       notify(
         e.name === "AbortError"
@@ -133,31 +130,40 @@ async function guarded(button, fn) {
     }
   } finally {
     button.disabled = false;
-    if (button.id === "chat-send" || button.id === "ai-generate")
+    if (button.id === "chat-send")
       setAIControls();
   }
 }
 function writeSpec(s) {
+  const project = s?.project;
+  const objective = s?.objective;
+  const resources = s?.resources;
+  if (!project || !s.system || !objective || !s.solver || !resources)
+    throw Error("JSON 需要 project、system、objective、solver 和 resources 字段。");
   $("spec").value = JSON.stringify(s, null, 2);
-  $("project-name").value = s.project.name;
-  $("description").value = s.project.description || "";
-  $("timestep").value = s.solver.timestep;
-  $("target-index").value = s.objective.target_index;
-  $("initial-point").value = JSON.stringify(s.objective.initial_point);
-  $("walltime").value = s.resources.walltime_seconds;
-  $("memory").value = s.resources.memory_mb;
-  $("cpu").value = s.resources.cpu_threads;
+  $("project-name").value = project.name ?? "";
+  $("description").value = project.description ?? "";
+  $("timestep").value = s.solver.timestep ?? "";
+  $("target-index").value = objective.target_index ?? "";
+  $("initial-point").value = objective.initial_point == null ? "" : JSON.stringify(objective.initial_point);
+  $("walltime").value = resources.walltime_seconds ?? "";
+  $("memory").value = resources.memory_mb ?? "";
+  $("cpu").value = resources.cpu_threads ?? "";
+  $("template").value = Object.entries(templates).find(([, item]) =>
+    item.spec.system.model_id === s.system.model_id && s.system.representation === "template"
+  )?.[0] ?? "";
+  $("load-template").disabled = !$("template").value;
   draftKey = null;
 }
 function readSpec() {
-  const s = JSON.parse($("spec").value);
-  s.project.description = $("description").value;
-  return s;
+  if (!$("spec").value.trim()) throw Error("请先新建、导入或粘贴任务 JSON。");
+  return JSON.parse($("spec").value);
 }
 $("sync-form").onclick = () => {
   try {
     const s = readSpec();
     s.project.name = $("project-name").value;
+    s.project.description = $("description").value;
     s.solver.timestep = Number($("timestep").value);
     s.objective.target_index = Number($("target-index").value);
     s.objective.initial_point = JSON.parse($("initial-point").value);
@@ -171,8 +177,13 @@ $("sync-form").onclick = () => {
   }
 };
 $("spec").oninput = () => (draftKey = null);
+$("template").onchange = () => {
+  $("load-template").disabled = !$("template").value;
+};
 $("load-template").onclick = () => {
-  writeSpec(structuredClone(templates[$("template").value].spec));
+  const template = templates[$("template").value];
+  if (!template) return;
+  writeSpec(structuredClone(template.spec));
   notify("模板已载入。请检查参数后发送复核。");
 };
 $("import").onchange = async (e) => {
@@ -194,18 +205,19 @@ async function loginSession(saved = null) {
     const loginEpoch = epoch;
     const me = await call("/v1/me");
     templates = await call("/v1/templates");
-    $("template").replaceChildren();
+    const optionalTemplate = el("option", "自定义 JSON");
+    optionalTemplate.value = "";
+    $("template").replaceChildren(optionalTemplate);
+    $("load-template").disabled = true;
     for (const [k, v] of Object.entries(templates)) {
       const o = el("option", v.name);
       o.value = k;
       $("template").append(o);
     }
-    writeSpec(structuredClone(Object.values(templates)[0].spec));
     if (loginEpoch !== epoch) return;
     if (saved && Date.now() - saved.lastActivity >= IDLE_MS)
       throw Error("登录已过期，请重新登录。");
     chat = saved?.chat || [];
-    draftMode = saved?.draftMode === true && me.ai_draft_enabled === true;
     lastActivity = saved?.lastActivity || Date.now();
     sessionActive = true;
     accountLoginInfo={auth_mode:me.auth_mode||'legacy',is_admin:!!me.is_admin};
@@ -224,21 +236,11 @@ async function loginSession(saved = null) {
     $("ai-badge").textContent = me.ai_enabled ? "可用" : "暂不可用";
     $("chat-input").placeholder = me.ai_enabled
       ? "描述你的系统、计算目标，或询问参数含义。"
-      : "AI 未启用时可先用模板。";
+      : "AI 未启用时可手动编辑或导入 JSON。";
     $("chat-send").disabled = !me.ai_enabled;
     $("chat-input").disabled = !me.ai_enabled;
-    $("ai-context").disabled =
-      !me.ai_enabled ||
-      me.ai_context_enabled !== true ||
-      me.ai_context_version !== 2;
     aiJobContextEnabled = aiEnabled && me.ai_job_context_enabled === true;
     $("ai-job-context").disabled = !aiJobContextEnabled || !selected;
-    aiDraftEnabled = me.ai_enabled && me.ai_draft_enabled === true;
-    $("ai-generate").disabled = !aiDraftEnabled;
-    $("ai-context-note").textContent =
-      me.ai_context_enabled === true && me.ai_context_version === 2
-        ? "勾选后附带发送时的模板选择和编辑框草案。表单修改请先写入 JSON。"
-        : "当前暂不支持附带草案，请联系管理员。";
     showChat(true);
     renderChat();
     setAIControls();
@@ -265,13 +267,7 @@ $("logout").onclick = () => {
   $("ai-job-context").checked = false;
   $("ai-job-context").disabled = true;
   $("ai-job-status").textContent = "本轮未附带已提交任务。";
-  clearAIProposal();
   aiPending = false;
-  aiDraftEnabled = false;
-  draftMode = false;
-  $("ai-generate").classList.remove("is-selected");
-  $("ai-generate").setAttribute("aria-pressed", "false");
-  $("ai-generate").disabled = true;
   token = "";
   clearTimeout(timer);
   busy = false;
@@ -304,9 +300,6 @@ $("logout").onclick = () => {
   $("chat-input").value = "";
   $("reviewed").checked = false;
   $("ai-consent").checked = false;
-  $("ai-context").checked = false;
-  $("ai-context").disabled = true;
-  $("ai-context-status").textContent = "尚未发送本轮草案。";
   $("detail").hidden = true;
   $("detail-empty").hidden = false;
   aiEnabled = false;
@@ -324,6 +317,7 @@ $("logout").onclick = () => {
 };
 $("prepare").onclick = () =>
   guarded($("prepare"), async () => {
+    const requestEpoch = epoch;
     const s = readSpec();
     draftKey = draftKey || crypto.randomUUID();
     const j = await call(
@@ -332,6 +326,7 @@ $("prepare").onclick = () =>
       { spec: s },
       { "Idempotency-Key": draftKey },
     );
+    if (requestEpoch !== epoch) return;
     draftKey = null;
     selectTaskView(j.id);
     notify("方案已提交复核，可能等待约2分钟。复核后请确认是否计算。");
@@ -662,57 +657,11 @@ $("restart").onclick = () =>
     notify("新任务已提交复核，确认方案后才会计算。");
     await refresh();
   });
-function buildAIContext() {
-  if (!$("ai-context").checked) return undefined;
-  if ($("ai-context").disabled)
-    throw Error("当前暂不支持附带草案，请联系管理员");
-  let draft;
-  try {
-    draft = readSpec();
-  } catch {
-    throw Error("任务 JSON 无效，请先修正，或取消附带任务 JSON 后提问");
-  }
-  if (!draft || typeof draft !== "object" || Array.isArray(draft))
-    throw Error("任务 JSON 必须是对象");
-  if (new TextEncoder().encode(JSON.stringify(draft)).length > 16000)
-    throw Error("任务 JSON 超过16KB，请精简，或取消附带任务 JSON 后提问");
-  return { template_id: $("template").value, draft };
-}
-function aiFormSnapshot() {
-  return JSON.stringify(
-    [
-      "project-name",
-      "description",
-      "timestep",
-      "target-index",
-      "initial-point",
-      "walltime",
-      "memory",
-      "cpu",
-    ].map((id) => $(id).value),
-  );
-}
-function clearAIProposal() {
-  aiProposal = null;
-  $("ai-proposal").hidden = true;
-  $("ai-proposal-json").textContent = "";
-  $("ai-proposal-changes").textContent = "";
-  $("ai-apply").disabled = true;
-}
 function setAIActionStatus(message, bad = false) {
   const status = $("ai-action-status");
   status.textContent = message;
   status.className = bad ? "small bad" : "small";
   status.hidden = !message;
-}
-// A narrow UI hint for explicit edits, not a replacement for server validation.
-function asksToEditDraft(message) {
-  if (/(?:不要|不需要|无需|不必|别).{0,8}(?:改|调整|更新|生成|设置)/.test(message))
-    return false;
-  if (/^(?:请|帮我)?(?:解释|说明|分析|检查|比较)/.test(message.trim())) return false;
-  const target = /json|草案|配置|任务名称|项目名称|目标指标|初始点|时间步长|步长|线程|内存|时间预算|project\.name|target_index|initial_point|timestep|cpu_threads|memory_mb|walltime_seconds|max_iterations|tolerance/i;
-  const action = /(?:帮我|替我|请|直接).{0,40}(?:改|调整|更新|生成|设置|创建|写)|把.{0,40}改(?:成|为)|^(?:修改|调整|更新|生成|创建|设置).{0,40}/;
-  return target.test(message) && action.test(message);
 }
 const AI_MODEL_SUGGESTIONS = {
   deepseek: ["deepseek-flash", "deepseek-v4-pro"],
@@ -988,7 +937,7 @@ async function checkAIProfile(listModels) {
 $("ai-model-fetch").onclick = () => checkAIProfile(true);
 $("ai-model-test").onclick = () => checkAIProfile(false);
 
-async function sendAI(mode) {
+async function sendAI() {
   const button = $("chat-send");
   const requestEpoch = epoch;
   return guarded(button, async () => {
@@ -997,15 +946,7 @@ async function sendAI(mode) {
     const msg = $("chat-input").value.trim();
     if (!msg) {
       $("chat-input").focus();
-      throw Error(
-        mode === "draft"
-          ? "请先输入修改要求，再点击发送。例如：仅将任务名称改为 demo-cubic，其余不变。"
-          : "请先输入问题，再点击发送。",
-      );
-    }
-    if (mode === "chat" && $("ai-source").value === "platform" && asksToEditDraft(msg)) {
-      $("ai-generate").focus();
-      throw Error("如需修改任务 JSON，请先点击“生成配置草案”开启蓝色模式，再点击发送。你的要求仍保留在输入框中。");
+      throw Error("请先输入问题，再点击发送。");
     }
     if (!$("ai-consent").checked) throw Error("请先勾选允许发送给外部模型");
     const source = $("ai-source");
@@ -1017,39 +958,26 @@ async function sendAI(mode) {
     const personal = profile ? personalAIRequest(profile, aiProfileKey) : null;
     const aiSource = personal ? "personal" : "platform";
     const providerLabel = personal ? source.selectedOptions[0].textContent.trim() : "";
-    if (mode === "draft" && !aiDraftEnabled)
-      throw Error("当前暂不支持生成草案，请联系管理员");
-    if (mode === "draft" && !$("ai-context").checked)
-      throw Error("生成草案需要勾选附带当前模板与任务 JSON");
     let jobId;
     if ($("ai-job-context").checked) {
       if ($("ai-job-context").disabled)
         throw Error("当前暂不支持读取任务，请联系管理员");
-      if (mode === "draft")
-        throw Error("附带已提交任务仅用于普通对话，请取消勾选后生成草案");
       jobId = selected || undefined;
       if (!jobId) notify("没有选择任务，本轮继续普通对话。");
     }
-    const context = buildAIContext();
-    const baseSnapshot = context ? JSON.stringify(context.draft) : null,
-      formSnapshot = aiFormSnapshot();
-    if (mode === "draft") clearAIProposal();
     const pending = { role: "user", content: msg };
-    $("ai-context-status").textContent = context
-      ? "正在发送本轮草案，等待确认。"
-      : "本轮未附带任务 JSON。";
     $("ai-job-status").textContent = jobId
       ? "正在读取选中任务 " + jobId + "，等待确认。"
       : selected
         ? "本轮未附带已提交任务。"
         : "没有选择任务，本轮不读取任务信息。";
     aiPending = true;
-    setAIActionStatus(mode === "draft" ? "正在生成配置建议，当前草案尚未修改…" : "正在等待回答…");
+    setAIActionStatus("正在等待回答…");
     setAIControls();
     renderChat(pending);
     try {
       const r = await call(personal ? "/v1/ai/personal/chat" : "/v1/ai/chat", "POST", {
-        mode,
+        mode: "chat",
         ai_source: aiSource,
         ...(personal ? { personal_ai: personal } : {}),
         messages: [
@@ -1058,9 +986,6 @@ async function sendAI(mode) {
             ...pending,
             content:
               msg +
-              (mode === "chat"
-                ? "\n\n[页面操作：本轮是普通对话，未开启配置草案模式。如果用户请求修改或生成当前任务JSON，请提示先点击“生成配置草案”使其显示蓝色，再通过发送箭头提交要求。不要声称网页JSON已被修改；概念解释和配置检查可以正常回答。]"
-                : "") +
               (!selected
                 ? "\n\n[页面状态：本轮没有选择已提交任务。若需要读取任务信息，请说明尚未选择任务，不要引用之前任务作为当前任务。]"
                 : !jobId
@@ -1069,23 +994,11 @@ async function sendAI(mode) {
           },
         ].slice(-8),
         allow_external: true,
-        ...(context ? { context } : {}),
         ...(jobId ? { job_id: jobId } : {}),
       });
+      if (requestEpoch !== epoch) return;
       if (personal && r.ai_source !== "personal")
         throw Error("后端未确认使用个人 AI，请检查是否已部署新版 Worker");
-      if (context) {
-        if (r.context_attached !== true || !r.context_receipt)
-          throw Error("本轮草案未成功读取，请重新选择附带草案后再试");
-        const v = r.context_receipt;
-        $("ai-context-status").textContent =
-          "本轮已附带草案：模型 " +
-          JSON.stringify(v.model_id) +
-          "，维数 " +
-          JSON.stringify(v.dimension) +
-          "，目标指标 " +
-          JSON.stringify(v.target_index);
-      }
       if (jobId) {
         if (r.job_receipt?.task_id !== jobId)
           throw Error("选中任务未成功读取，请重新选择任务后再试");
@@ -1099,37 +1012,10 @@ async function sendAI(mode) {
             r.job_receipt.captured_at;
         }
       }
-      if (mode === "draft") {
-        if (!r.proposal?.spec || !Array.isArray(r.proposal.changes))
-          throw Error("未收到有效配置草案，请稍后再试");
-        if (r.proposal.changes.length) {
-          aiProposal = { spec: r.proposal.spec, baseSnapshot, formSnapshot };
-          $("ai-proposal-changes").textContent = r.proposal.changes
-            .map(
-              (c) =>
-                c.path +
-                "：" +
-                JSON.stringify(c.before) +
-                " → " +
-                JSON.stringify(c.after),
-            )
-            .join("\n");
-          $("ai-proposal-json").textContent = JSON.stringify(
-            r.proposal.spec,
-            null,
-            2,
-          );
-          $("ai-proposal").hidden = false;
-          $("ai-apply").disabled = false;
-          setAIActionStatus("已生成配置建议。请检查上方改动，再点击“应用到任务草案”。");
-        } else {
-          setAIActionStatus("本次没有参数改动，请查看助手说明；需要澄清时，补充要求后重新生成。");
-          notify("本次没有参数改动，请查看助手说明。");
-        }
-      }
-      if (mode !== "draft") setAIActionStatus("已收到回答。文字建议不会自动修改任务草案。");
+      setAIActionStatus("");
       chat.push(pending, {
         role: "assistant", content: r.message, aiSource, providerLabel,
+        ...(r.draft_spec ? { draftSpec: r.draft_spec } : {}),
         ...(personal && typeof r.ai_thinking === "string" ? { aiThinking: r.ai_thinking } : {})
       });
       saveSession();
@@ -1147,36 +1033,7 @@ async function sendAI(mode) {
     }
   });
 }
-$("chat-send").onclick = () => sendAI(draftMode ? "draft" : "chat");
-$("ai-generate").onclick = () => {
-  if (!aiDraftEnabled || aiPending) return;
-  draftMode = !draftMode;
-  setAIControls();
-  saveSession();
-  setAIActionStatus(
-    draftMode
-      ? "已开启配置草案模式。附带当前草案、取消附带任务，输入修改要求后点击发送。再次点击蓝色按钮可取消。"
-      : "已切回普通对话。已有配置建议仍可检查或丢弃。",
-  );
-};
-$("ai-apply").onclick = () => {
-  try {
-    if (!aiProposal) return;
-    if (
-      JSON.stringify(readSpec()) !== aiProposal.baseSnapshot ||
-      aiFormSnapshot() !== aiProposal.formSnapshot
-    )
-      throw Error("生成后当前配置已改变，请重新生成草案，避免覆盖你的新修改");
-    writeSpec(structuredClone(aiProposal.spec));
-    clearAIProposal();
-    showPanel("config");
-    setAIActionStatus("配置建议已应用到任务草案，尚未提交或开始计算。");
-    notify("AI 草案已应用，请检查后提交方案复核。");
-  } catch (e) {
-    notify(e.message, true);
-  }
-};
-$("ai-discard").onclick = clearAIProposal;
+$("chat-send").onclick = sendAI;
 async function refresh() {
   if (!token) return;
   clearTimeout(timer);
@@ -1309,15 +1166,7 @@ function selectTaskView(id) {
 }
 function setAIControls() {
   $("chat-send").disabled = !aiEnabled || aiPending;
-  $("ai-generate").disabled = !aiDraftEnabled || aiPending;
-  $("ai-generate").classList.toggle("is-selected", draftMode);
-  $("ai-generate").setAttribute("aria-pressed", String(draftMode));
-  $("ai-generate").title = !aiDraftEnabled
-    ? "当前服务未开放配置草案生成，请联系管理员。"
-    : draftMode
-      ? "配置草案模式已开启，点击取消；发送箭头用于提交修改要求。"
-      : "开启配置草案模式；此按钮不会发送消息。";
-  $("chat-send").title = draftMode ? "发送草案修改要求" : "发送消息";
+  $("chat-send").title = "发送消息";
   $("chat-send").setAttribute("aria-label", $("chat-send").title);
   $("chat-input").disabled = !aiEnabled || aiPending;
   $("new-chat").disabled = aiPending;
@@ -1325,9 +1174,21 @@ function setAIControls() {
   $("ai-model-settings").disabled = !aiEnabled || aiPending;
   $("chat-state").textContent = aiPending
     ? "正在思考…"
-    : draftMode
-      ? "配置草案模式 · Enter 发送 · Shift + Enter 换行"
-      : "Enter 发送 · Shift + Enter 换行";
+    : "Enter 发送 · Shift + Enter 换行";
+}
+function openAIModelDraft(spec) {
+  try {
+    const current = $("spec").value.trim();
+    if (current && current !== JSON.stringify(spec, null, 2) &&
+        !confirm("打开这份 AI 草案会替换当前编辑器中的内容。是否继续？"))
+      return;
+    writeSpec(spec);
+    $("spec-editor").open = true;
+    showPanel("config");
+    notify("配置草案已打开，请检查后提交方案复核。");
+  } catch (error) {
+    notify(error.message, true);
+  }
 }
 function renderChat(pending = null, error = null) {
   $("chat-welcome").hidden = chat.length > 0 || !!pending;
@@ -1354,6 +1215,12 @@ function renderChat(pending = null, error = null) {
       const copy = el("button", "复制回答", "message-copy");
       copy.onclick = () => window.copyText(m.content, copy);
       row.append(copy);
+      if (m.draftSpec) {
+        const create = el("button", "新建配置草案", "message-draft");
+        create.type = "button";
+        create.onclick = () => openAIModelDraft(m.draftSpec);
+        row.append(create);
+      }
     }
     log.append(row);
   }
@@ -1382,7 +1249,7 @@ $("close-panel").onclick = () => showChat(true);
 $("new-chat").onclick = () => {
   if (aiPending) return;
   if (
-    (chat.length || $("chat-input").value.trim() || aiProposal) &&
+    (chat.length || $("chat-input").value.trim()) &&
     !confirm(
       "当前仅保留一个临时对话。开始新对话将清空现有消息、未发送内容和配置建议，无法恢复。是否继续？",
     )
@@ -1390,7 +1257,6 @@ $("new-chat").onclick = () => {
     return;
   chat = [];
   setAIActionStatus("");
-  clearAIProposal();
   saveSession();
   renderChat();
   $("chat-input").value = "";
@@ -1445,7 +1311,7 @@ function saveSession() {
   try {
     sessionStorage.setItem(
       SESSION_KEY,
-      JSON.stringify({ token, lastActivity, chat, draftMode }),
+      JSON.stringify({ token, lastActivity, chat }),
     );
   } catch {
     notify("浏览器无法保存本次会话，刷新后可能需要重新登录。", true);

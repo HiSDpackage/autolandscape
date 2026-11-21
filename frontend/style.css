@@ -1078,20 +1078,6 @@ pre {
   border-radius: 8px;
   margin: 8px 0;
 }
-#ai-proposal {
-  max-width: 800px;
-  margin: 20px auto;
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #f6f8f1;
-}
-#ai-proposal h3 {
-  margin: 0 0 12px;
-}
-#ai-proposal pre {
-  max-height: 200px;
-}
 #message {
   position: fixed;
   z-index: 100;
@@ -1436,14 +1422,6 @@ pre {
 }
 
 /* Draft mode is a toggle; sending remains a separate action. */
-#ai-generate.is-selected {
-  color: #fff;
-  background: #2563eb;
-  border-radius: 8px;
-  box-shadow: inset 0 0 0 1px #1d4ed8;
-}
-#ai-generate.is-selected:hover { background: #1d4ed8; }
-#ai-generate:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
 
 /* Account and approval UI extension: does not alter scientific workspace layout. */
 #account-login-form label,.account-form-panel label,.account-dialog label {display:block;font-size:0.85rem;font-weight:600;margin-top:12px}
@@ -1468,3 +1446,8 @@ pre {
 .review-fields {display:grid;grid-template-columns:125px 1fr;gap:7px 10px;overflow-wrap:anywhere}
 .review-fields dt {font-weight:700;color:#667780}.review-fields dd{margin:0}
 [hidden] {display:none!important}
+
+.message-draft {
+  margin: 4px 0 4px 8px;
+  padding: 6px 10px;
+}

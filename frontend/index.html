@@ -220,24 +220,6 @@
                 role="log"
                 aria-live="polite"
               ></div>
-              <div id="ai-proposal-wrap">
-                <div id="ai-proposal" hidden>
-                  <h3>AI 配置草案</h3>
-                  <p class="notice">
-                    请检查下方改动。应用后仍需提交复核，并由你确认计算。
-                  </p>
-                  <pre id="ai-proposal-changes"></pre>
-                  <details>
-                    <summary>查看完整草案 JSON</summary>
-                    <pre id="ai-proposal-json"></pre>
-                  </details>
-                  <div class="button-row">
-                    <button id="ai-apply" class="quiet" disabled>
-                      应用到任务草案</button
-                    ><button id="ai-discard" class="quiet">丢弃草案</button>
-                  </div>
-                </div>
-              </div>
             </div>
             <div class="composer-wrap">
               <div class="composer">
@@ -253,9 +235,7 @@
                     >Enter 发送 · Shift + Enter 换行</span
                   >
                   <div>
-                    <button id="ai-generate" class="text-button" aria-pressed="false" disabled>
-                      生成配置草案</button
-                    ><button
+                    <button
                       id="chat-send"
                       class="send-button"
                       aria-label="发送消息"
@@ -279,10 +259,6 @@
                     <span>同意将本次对话及勾选的资料发送至外部 AI 服务</span>
                   </label>
                   <label class="check">
-                    <input type="checkbox" id="ai-context" disabled>
-                    <span>附带当前草案</span>
-                  </label>
-                  <label class="check">
                     <input type="checkbox" id="ai-job-context" disabled>
                     <span>附带选中任务</span>
                   </label>
@@ -297,13 +273,9 @@
                 </div>
               </div>
               <div id="context-info" class="context-info" hidden>
-                <p id="ai-context-note">
-                  附带发送时的任务草案。表单修改后请先保存参数。
-                </p>
                 <p>
                   选中任务仅附带状态、最近日志、结果摘要及少量节点，不发送结果文件或图像。
                 </p>
-                <p id="ai-context-status">尚未附带草案。</p>
                 <p id="ai-job-status">尚未附带任务。</p>
               </div>
             </div>
@@ -330,11 +302,11 @@
             <div class="panel-scroll">
               <section id="config-panel" hidden>
                 <p class="panel-intro">
-                  选择模型，设置参数，然后提交方案复核。
+                  可在下方粘贴 JSON、导入文件或载入示例模板，然后提交方案复核。
                 </p>
-                <label>模型模板<select id="template"></select></label>
+                <label>示例模板（可选）<select id="template"></select></label>
                 <div class="button-row">
-                  <button id="load-template" class="quiet">载入模板</button
+                  <button id="load-template" class="quiet" disabled>载入模板</button
                   ><label class="upload"
                     >导入 JSON<input
                       id="import"
@@ -375,9 +347,9 @@
                   /></label>
                 </div>
                 <button id="sync-form" class="quiet">保存参数到草案</button>
-                <details>
-                  <summary>完整任务 JSON（高级编辑）</summary>
-                  <p>提交和附带草案以下方 JSON 为准。修改表单后，请先点击“保存参数到草案”。</p>
+                <details id="spec-editor" open>
+                  <summary>完整任务 JSON</summary>
+                  <p>提交以下方 JSON 为准。修改表单后，请先点击“保存参数到草案”。</p>
                   <textarea id="spec" spellcheck="false" rows="18"></textarea>
                 </details>
                 <label
@@ -519,7 +491,7 @@
                   </p>
                   <h3>快速开始</h3>
                   <p>
-                    登录 → 提问 → 载入模板 → 保存草案 → 提交复核 → 确认计算 →
+                    登录 → 提问 → 新建草案 → 提交复核 → 确认计算 →
                     查看结果。不熟悉参数可以先问助手，不需要先选任务。
                   </p>
                   <h3>1. 与助手对话</h3>
@@ -529,13 +501,11 @@
                     是什么意思？”这只是提问示例，你也可以直接描述研究目标。回答支持公式、表格和代码复制。
                   </p>
                   <p>
-                    要检查配置，勾选“附带当前草案”；要分析结果，打开正确任务并勾选“附带选中任务”。未选任务也能普通对话，本轮不会读取任务信息。
+                    要检查配置，可以在提问时粘贴 JSON。要分析结果，选择任务并勾选“附带选中任务”。
                   </p>
                   <h3>2. 配置并应用建议</h3>
                   <p>
-                    在“配置新任务”中选择并载入模板。修改表单后点击“保存参数到草案”，提交以
-                    JSON 为准。需要 AI
-                    建议时，附带草案、取消附带任务，点击“生成配置草案”开启蓝色模式，先在输入框写明修改要求，例如“仅将任务名称改为 demo-cubic，其余不变”，再点击发送箭头或按 Enter。出现改动清单后，检查并点击“应用到任务草案”。蓝色按钮只切换模式，再次点击可取消；普通对话中的文字建议不会修改草案。
+                    直接在对话中描述系统和计算目标。通过初步校验的 JSON 回复下方会显示“新建配置草案”。也可在“配置新任务”里粘贴、导入 JSON 或载入示例模板。修改表单后点击“保存参数到草案”，提交以 JSON 为准。
                   </p>
                   <h3>3. 复核后确认计算</h3>
                   <p>
