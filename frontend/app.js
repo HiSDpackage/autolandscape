@@ -217,6 +217,7 @@ async function loginSession(saved = null) {
     $("user-label").textContent = me.username || me.id;
     $("user-avatar").textContent = String(me.username || me.id).slice(0, 1).toUpperCase();
     aiEnabled = !!me.ai_enabled;
+    aiPersonalCapabilities = me.ai_personal_capabilities ?? [];
     loadAIProfiles(me.id);
     $("connection").textContent = "已连接";
     $("ai-badge").textContent = me.ai_enabled ? "可用" : "暂不可用";
@@ -718,6 +719,8 @@ const AI_MODEL_SUGGESTIONS = {
   qwen: ["qwen4-max", "qwen3.8-max", "qwen3.8-flash", "qwen3.8-2.4t-a95b", "qwen3.7-plus"],
 };
 
+const AI_EFFORT_LABELS = { low: "低", medium: "中", high: "高", xhigh: "很高", max: "最高" };
+let aiPersonalCapabilities = [];
 let aiProfiles = [];
 let aiProfileStorage = "";
 let aiProfileKey = "";
@@ -780,13 +783,39 @@ function modelSettingsStatus(message = "", error = false) {
   status.className = error ? "small bad" : "small";
 }
 
-function updateModelFields() {
+function updateModelFields(selectedEffort = $("ai-model-reasoning").value) {
   const provider = $("ai-provider").value, model = $("ai-personal-model").value.trim();
   $("ai-personal-region-field").hidden = !$("ai-provider").selectedOptions[0].hasAttribute("data-regional");
-  $("ai-model-reasoning-row").hidden =
-    provider !== "deepseek" || !/^deepseek-(?:v4(?:\.1)?-)?(?:flash|pro)(?:-\d+)?$/i.test(model);
-  $("ai-model-temperature-row").hidden = !(provider === "gpt" && /^gpt-4(?:[.o-]|$)/i.test(model));
+  const cap = aiPersonalCapabilities.find((item) =>
+    item.provider === provider && new RegExp(item.pattern, "i").test(model)
+  ) ?? {};
+  const thinking = $("ai-model-thinking");
+  if (!cap.toggle) thinking.value = "";
+  $("ai-model-thinking-row").hidden = !cap.toggle;
+  const effort = $("ai-model-reasoning");
+  const levels = cap.efforts ?? [];
+  const defaults = cap.defaultEffort ? "供应商默认 · " + AI_EFFORT_LABELS[cap.defaultEffort] : "供应商默认";
+  effort.replaceChildren(...["", ...levels].map((level) => {
+    const option = el("option", level ? AI_EFFORT_LABELS[level] : defaults);
+    option.value = level;
+    return option;
+  }));
+  effort.value = levels.includes(selectedEffort) ? selectedEffort : "";
+  $("ai-model-reasoning-row").hidden = !levels.length || thinking.value === "off";
+  $("ai-model-thinking-note").textContent = cap.toggle
+    ? "默认" + (cap.defaultThinking === "on" ? "开启" : cap.defaultThinking === "off" ? "关闭" : "由供应商决定") + "。"
+    : cap.defaultThinking === "on" ? "此模型的深度思考始终开启。"
+    : cap.defaultThinking === "off" ? "此模型不提供深度思考设置。"
+    : "此型号暂无已核对的思考设置，使用供应商默认参数。";
+  const sampling = cap.sampling === "any" || cap.sampling === "off" && thinking.value === "off";
+  $("ai-model-sampling").hidden = !sampling;
+  $("ai-model-temperature-row").hidden = !sampling;
+  $("ai-model-temperature").disabled = !sampling;
+  $("ai-model-top-p-row").hidden = !sampling || !cap.topP;
+  $("ai-model-top-p").disabled = !sampling || !cap.topP;
 }
+
+$("ai-model-thinking").onchange = () => updateModelFields();
 
 function renderAIModelSuggestions(accountModels = []) {
   const provider = $("ai-provider").value;
@@ -809,17 +838,21 @@ function editAIProfile(id) {
   $("ai-personal-key").value = id === $("ai-source").value ? aiProfileKey : "";
   $("ai-model-max-tokens").value = profile?.generation?.max_tokens ?? "";
   $("ai-model-temperature").value = profile?.generation?.temperature ?? "";
-  $("ai-model-reasoning").value = profile?.generation?.reasoning_effort ?? "";
+  $("ai-model-top-p").value = profile?.generation?.top_p ?? "";
+  const effort = profile?.generation?.reasoning_effort;
+  $("ai-model-thinking").value = profile?.generation?.thinking_mode ?? (effort === "none" ? "off" : "");
   $("ai-model-remove").hidden = !profile;
   renderAIModelSuggestions();
   modelSettingsStatus();
-  updateModelFields();
+  updateModelFields(effort ?? "");
 }
 
 function invalidateModelConnection() {
   $("ai-personal-key").value = "";
+  $("ai-model-thinking").value = "";
   $("ai-model-reasoning").value = "";
   $("ai-model-temperature").value = "";
+  $("ai-model-top-p").value = "";
   renderAIModelSuggestions();
   modelSettingsStatus();
   updateModelFields();
@@ -857,6 +890,10 @@ function readAIProfile() {
     ...(!$("ai-personal-region-field").hidden ? { region: $("ai-personal-region").value } : {}),
     generation: {
       ...($("ai-model-max-tokens").value ? { max_tokens: $("ai-model-max-tokens").valueAsNumber } : {}),
+      ...(!$("ai-model-thinking-row").hidden && $("ai-model-thinking").value
+        ? { thinking_mode: $("ai-model-thinking").value } : {}),
+      ...(!$("ai-model-top-p-row").hidden && $("ai-model-top-p").value
+        ? { top_p: $("ai-model-top-p").valueAsNumber } : {}),
       ...(!$("ai-model-temperature-row").hidden && $("ai-model-temperature").value
         ? { temperature: $("ai-model-temperature").valueAsNumber } : {}),
       ...(!$("ai-model-reasoning-row").hidden && $("ai-model-reasoning").value
@@ -870,6 +907,15 @@ function personalAIRequest({ provider, region, model, generation }, apiKey) {
 }
 
 function validModelForm(profile) {
+  const { temperature, top_p: topP } = profile.generation;
+  if (topP != null && (topP <= 0 || temperature != null)) {
+    modelSettingsStatus("Top-p 须大于 0，且与温度任选一项设置。", true);
+    return false;
+  }
+  if (profile.provider === "qwen" && temperature === 2) {
+    modelSettingsStatus("Qwen 的温度须小于 2。", true);
+    return false;
+  }
   if ($("ai-model-form").reportValidity() && /^[a-zA-Z0-9._:/@-]{1,200}$/.test(profile.model))
     return true;
   modelSettingsStatus("请检查模型 ID 和高级参数。", true);
@@ -1075,7 +1121,10 @@ async function sendAI(mode) {
         }
       }
       if (mode !== "draft") setAIActionStatus("已收到回答。文字建议不会自动修改任务草案。");
-      chat.push(pending, { role: "assistant", content: r.message, aiSource, providerLabel });
+      chat.push(pending, {
+        role: "assistant", content: r.message, aiSource, providerLabel,
+        ...(personal && typeof r.ai_thinking === "string" ? { aiThinking: r.ai_thinking } : {})
+      });
       saveSession();
       $("chat-input").value = "";
       renderChat();
@@ -1279,6 +1328,8 @@ function renderChat(pending = null, error = null) {
       author = m.providerLabel ? "个人 AI · " + m.providerLabel : "个人 AI";
     name.append(el("span", author));
     row.append(name);
+    if (m.aiSource === "personal" && m.aiThinking)
+      row.append(el("p", m.aiThinking, "small ai-reply-thinking"));
     const body = el("div", undefined, "message-body");
     if (m.role === "assistant") window.renderAssistant(body, m.content);
     else body.textContent = m.content;

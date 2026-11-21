@@ -757,6 +757,24 @@ small,
   gap: 10px 14px;
   margin: 10px 0;
 }
+.ai-parameter-group {
+  border: 1px solid #d8dedc;
+  border-radius: 8px;
+  padding: 0 10px 4px;
+  margin: 8px 0;
+  min-width: 0;
+}
+.ai-parameter-group legend {
+  font: inherit;
+  font-weight: 600;
+  padding: 0 4px;
+}
+.ai-parameter-group .small {
+  margin: 4px 0 6px;
+}
+.ai-reply-thinking {
+  margin: 2px 0 6px;
+}
 #ai-model-dialog .button-row {
   flex-wrap: wrap;
   margin: 8px 0;
