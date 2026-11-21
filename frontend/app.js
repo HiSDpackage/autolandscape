@@ -44,6 +44,7 @@ let token = "",
   aiProposal = null,
   aiPending = false,
   aiDraftEnabled = false,
+  aiJobContextEnabled = false,
   draftMode = false;
 let noticeTimer;
 function notify(s, bad = false) {
@@ -230,8 +231,8 @@ async function loginSession(saved = null) {
       !me.ai_enabled ||
       me.ai_context_enabled !== true ||
       me.ai_context_version !== 2;
-    $("ai-job-context").disabled =
-      !me.ai_enabled || me.ai_job_context_enabled !== true;
+    aiJobContextEnabled = aiEnabled && me.ai_job_context_enabled === true;
+    $("ai-job-context").disabled = !aiJobContextEnabled || !selected;
     aiDraftEnabled = me.ai_enabled && me.ai_draft_enabled === true;
     $("ai-generate").disabled = !aiDraftEnabled;
     $("ai-context-note").textContent =
@@ -260,6 +261,7 @@ $("logout").onclick = () => {
   try {
     sessionStorage.removeItem(SESSION_KEY);
   } catch {}
+  aiJobContextEnabled = false;
   $("ai-job-context").checked = false;
   $("ai-job-context").disabled = true;
   $("ai-job-status").textContent = "本轮未附带已提交任务。";
@@ -364,7 +366,7 @@ function renderJobs() {
       "job" + (selected === j.id ? " selected" : ""),
     );
     b.title = title + " · " + (T[j.status] || j.status);
-    b.setAttribute("aria-current", selected === j.id ? "true" : "false");
+    b.setAttribute("aria-pressed", String(selected === j.id));
     b.append(el("span", title, "job-title"));
     const meta = el("span", undefined, "job-meta");
     meta.append(
@@ -383,7 +385,7 @@ function renderJobs() {
     );
     b.append(meta);
     b.onclick = () => {
-      selectTaskView(j.id);
+      selectTaskView(selected === j.id ? null : j.id);
       refresh();
     };
     box.append(b);
@@ -392,6 +394,7 @@ function renderJobs() {
       el("strong", title),
       el("small", (T[j.status] || j.status) + " · " + date),
     );
+    card.setAttribute("aria-pressed", String(selected === j.id));
     card.onclick = b.onclick;
     overview.append(card);
   }
@@ -771,6 +774,8 @@ function renderAIProfiles(active = "platform") {
 }
 
 function updateAISource() {
+  const source = $("ai-source");
+  source.title = source.selectedOptions[0]?.textContent ?? "";
   aiProfileKey = "";
   $("ai-consent").checked = false;
 }
@@ -1084,13 +1089,15 @@ async function sendAI(mode) {
       if (jobId) {
         if (r.job_receipt?.task_id !== jobId)
           throw Error("选中任务未成功读取，请重新选择任务后再试");
-        $("ai-job-status").textContent =
-          "本轮已附带任务：" +
-          r.job_receipt.task_id +
-          " · " +
-          (T[r.job_receipt.status] || r.job_receipt.status) +
-          " · 读取时间 " +
-          r.job_receipt.captured_at;
+        if (selected === jobId) {
+          $("ai-job-status").textContent =
+            "本轮已附带任务：" +
+            r.job_receipt.task_id +
+            " · " +
+            (T[r.job_receipt.status] || r.job_receipt.status) +
+            " · 读取时间 " +
+            r.job_receipt.captured_at;
+        }
       }
       if (mode === "draft") {
         if (!r.proposal?.spec || !Array.isArray(r.proposal.changes))
@@ -1191,7 +1198,7 @@ async function refresh() {
     $("worker-state").textContent = w.some((x) => x.online)
       ? "计算服务在线"
       : "计算服务暂未连接";
-    if (requested === selected && dashboard.detail?.id === requested)
+    if (requested && requested === selected && dashboard.detail?.id === requested)
       renderDetail(dashboard.detail);
     else if (requested === selected && requested) {
       const record = await call("/v1/jobs/" + encodeURIComponent(requested));
@@ -1278,14 +1285,23 @@ function showPanel(kind) {
 function selectTaskView(id) {
   const changed = selected !== id;
   selected = id;
-  panelKind = "detail";
+  panelKind = id ? "detail" : "tasks";
   chatVisible = true;
+  const attachment = $("ai-job-context");
+  attachment.disabled = !aiJobContextEnabled || !id;
   if (changed) {
     detail = null;
+    imageTask = null;
+    for (const url of images) URL.revokeObjectURL(url);
+    images = [];
+    $("figures").replaceChildren();
     $("detail").hidden = true;
     $("detail-empty").hidden = false;
-    $("detail-empty").textContent = "正在读取任务…";
-    $("ai-job-status").textContent = "已选择新任务，发送时将读取最新状态。";
+    $("detail-empty").textContent = id ? "正在读取任务…" : "尚未选择任务。";
+    $("ai-job-status").textContent = id
+      ? "已选择新任务，发送时将读取最新状态。"
+      : "尚未选择已提交任务。";
+    if (!id) attachment.checked = false;
   }
   setLayout();
   renderJobs();

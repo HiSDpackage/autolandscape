@@ -720,30 +720,40 @@ small,
   font-size: 21px;
 }
 .consent-row {
-  margin-top: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  color: #92998b;
-  align-items: center;
+  margin-top: 8px;
+  display: grid;
+  gap: 7px;
+  font-size: 0.8125rem;
+  color: #60695d;
 }
 .ai-model-selector {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: 6px 10px;
   min-width: 0;
-  max-width: 100%;
 }
 .ai-model-selector label,
 #ai-source,
-#ai-model-settings {
+#ai-model-settings,
+.consent-row .check,
+.consent-row .info-button {
   font: inherit;
+  line-height: 1.4;
 }
 #ai-source {
-  width: auto;
+  width: 10rem;
   min-width: 0;
   max-width: 100%;
+  padding: 6px 8px;
+  text-overflow: ellipsis;
+}
+#ai-model-settings {
+  padding: 6px 10px;
+}
+#ai-model-dialog {
+  width: min(780px, calc(100vw - 24px));
+  padding: clamp(14px, 3vw, 26px);
 }
 #ai-model-fields {
   border: 0;
@@ -757,11 +767,17 @@ small,
   gap: 10px 14px;
   margin: 10px 0;
 }
+.ai-parameter-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 265px), 1fr));
+  gap: 10px 14px;
+  margin: 8px 0;
+}
 .ai-parameter-group {
   border: 1px solid #d8dedc;
   border-radius: 8px;
   padding: 0 10px 4px;
-  margin: 8px 0;
+  margin: 0;
   min-width: 0;
 }
 .ai-parameter-group legend {
@@ -801,8 +817,11 @@ small,
 .context-checks {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 4px 12px;
   align-items: center;
+}
+.context-checks .check input {
+  margin-top: 2px;
 }
 .info-button {
   font-size: 10px;
@@ -1034,6 +1053,10 @@ pre {
   width: 100%;
   padding: 17px;
   margin-bottom: 10px;
+}
+.task-overview-row[aria-pressed="true"] {
+  background: #e6e9e1;
+  border-color: #809174;
 }
 .task-overview-row strong {
   display: block;
@@ -1360,13 +1383,10 @@ pre {
   }
   .work-area.has-panel .consent-row {
     margin-top: 4px;
-    gap: 2px;
-  }
-  .consent-row .check {
-    font-size: 9px;
+    gap: 5px;
   }
   .context-checks {
-    gap: 9px;
+    gap: 4px 9px;
   }
   .chat-scroll {
     padding: 14px 20px;
