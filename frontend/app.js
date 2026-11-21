@@ -710,6 +710,14 @@ function asksToEditDraft(message) {
   const action = /(?:帮我|替我|请|直接).{0,40}(?:改|调整|更新|生成|设置|创建|写)|把.{0,40}改(?:成|为)|^(?:修改|调整|更新|生成|创建|设置).{0,40}/;
   return target.test(message) && action.test(message);
 }
+const AI_MODEL_SUGGESTIONS = {
+  deepseek: ["deepseek-flash", "deepseek-v4-pro"],
+  gemini: ["gemini-4-neon", "gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.8-flash"],
+  gpt: ["gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-terra", "gpt-6-luna"],
+  kimi: ["kimi-k3.1-pro", "kimi-k3.1-pro-highspeed", "kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed"],
+  qwen: ["qwen4-max", "qwen3.8-max", "qwen3.8-flash", "qwen3.8-2.4t-a95b", "qwen3.7-plus"],
+};
+
 let aiProfiles = [];
 let aiProfileStorage = "";
 let aiProfileKey = "";
@@ -749,7 +757,8 @@ function renderAIProfiles(active = "platform") {
   editor.options.length = 1;
   for (const profile of profiles) {
     const provider = $("ai-provider").options[order.indexOf(profile.provider)].textContent.trim();
-    const label = profile.name || profile.model;
+    const label = profile.name && profile.name !== profile.model
+      ? profile.name + " (" + profile.model + ")" : profile.model;
     const option = el("option", provider + " · " + label);
     option.value = profile.id;
     source.append(option);
@@ -774,12 +783,19 @@ function modelSettingsStatus(message = "", error = false) {
 function updateModelFields() {
   const provider = $("ai-provider").value, model = $("ai-personal-model").value.trim();
   $("ai-personal-region-field").hidden = !$("ai-provider").selectedOptions[0].hasAttribute("data-regional");
-  $("ai-personal-url-field").hidden = provider !== "custom";
-  $("ai-token-field-row").hidden = provider !== "custom";
   $("ai-model-reasoning-row").hidden =
     provider !== "deepseek" || !/^deepseek-(?:v4(?:\.1)?-)?(?:flash|pro)(?:-\d+)?$/i.test(model);
-  $("ai-model-temperature-row").hidden = !(provider === "custom" ||
-    provider === "gpt" && /^gpt-4(?:[.o-]|$)/i.test(model));
+  $("ai-model-temperature-row").hidden = !(provider === "gpt" && /^gpt-4(?:[.o-]|$)/i.test(model));
+}
+
+function renderAIModelSuggestions(accountModels = []) {
+  const provider = $("ai-provider").value;
+  const models = new Set([...(AI_MODEL_SUGGESTIONS[provider] || []), ...accountModels]);
+  $("ai-model-list").replaceChildren(...Array.from(models, (model) => {
+    const option = el("option");
+    option.value = model;
+    return option;
+  }));
 }
 
 function editAIProfile(id) {
@@ -789,15 +805,13 @@ function editAIProfile(id) {
   $("ai-provider").value = profile?.provider || "deepseek";
   $("ai-profile-name").value = profile?.name || "";
   $("ai-personal-region").value = profile?.region || "cn";
-  $("ai-personal-url").value = profile?.base_url || "";
   $("ai-personal-model").value = profile?.model || "";
   $("ai-personal-key").value = id === $("ai-source").value ? aiProfileKey : "";
-  $("ai-token-field").value = profile?.token_field || "max_tokens";
   $("ai-model-max-tokens").value = profile?.generation?.max_tokens ?? "";
   $("ai-model-temperature").value = profile?.generation?.temperature ?? "";
   $("ai-model-reasoning").value = profile?.generation?.reasoning_effort ?? "";
   $("ai-model-remove").hidden = !profile;
-  $("ai-model-list").replaceChildren();
+  renderAIModelSuggestions();
   modelSettingsStatus();
   updateModelFields();
 }
@@ -806,13 +820,12 @@ function invalidateModelConnection() {
   $("ai-personal-key").value = "";
   $("ai-model-reasoning").value = "";
   $("ai-model-temperature").value = "";
-  $("ai-model-list").replaceChildren();
+  renderAIModelSuggestions();
   modelSettingsStatus();
   updateModelFields();
 }
 $("ai-provider").onchange = invalidateModelConnection;
 $("ai-personal-region").onchange = invalidateModelConnection;
-$("ai-personal-url").oninput = invalidateModelConnection;
 $("ai-personal-model").oninput = () => {
   updateModelFields();
   modelSettingsStatus();
@@ -837,16 +850,11 @@ $("ai-personal-clear").onclick = () => {
 };
 
 function readAIProfile() {
-  const baseUrl = $("ai-personal-url").value.trim();
   return {
     provider: $("ai-provider").value,
     name: $("ai-profile-name").value.trim(),
     model: $("ai-personal-model").value.trim(),
     ...(!$("ai-personal-region-field").hidden ? { region: $("ai-personal-region").value } : {}),
-    ...(!$("ai-personal-url-field").hidden ? {
-      base_url: baseUrl,
-      token_field: $("ai-token-field").value
-    } : {}),
     generation: {
       ...($("ai-model-max-tokens").value ? { max_tokens: $("ai-model-max-tokens").valueAsNumber } : {}),
       ...(!$("ai-model-temperature-row").hidden && $("ai-model-temperature").value
@@ -857,17 +865,11 @@ function readAIProfile() {
   };
 }
 
-function personalAIRequest({ provider, region, model, base_url, token_field, generation }, apiKey) {
-  return { provider, region, model, base_url, token_field, generation, api_key: apiKey };
+function personalAIRequest({ provider, region, model, generation }, apiKey) {
+  return { provider, region, model, generation, api_key: apiKey };
 }
 
-function validModelForm(profile, listModels) {
-  if (profile.provider === "custom" && !/^https:\/\//i.test(profile.base_url)) {
-    modelSettingsStatus("请输入服务商的 HTTPS API Base URL。", true);
-    $("ai-personal-url").focus();
-    return false;
-  }
-  if (listModels) return $("ai-personal-url-field").hidden || $("ai-personal-url").reportValidity();
+function validModelForm(profile) {
   if ($("ai-model-form").reportValidity() && /^[a-zA-Z0-9._:/@-]{1,200}$/.test(profile.model))
     return true;
   modelSettingsStatus("请检查模型 ID 和高级参数。", true);
@@ -877,7 +879,7 @@ function validModelForm(profile, listModels) {
 $("ai-model-form").onsubmit = (event) => {
   event.preventDefault();
   const profile = readAIProfile();
-  if (!validModelForm(profile, false)) return;
+  if (!validModelForm(profile)) return;
   profile.id = aiEditingId || crypto.randomUUID();
   aiProfiles = aiProfiles.filter((item) => item.id !== profile.id);
   aiProfiles.push(profile);
@@ -898,7 +900,7 @@ $("ai-model-remove").onclick = () => {
 
 async function checkAIProfile(listModels) {
   const profile = readAIProfile();
-  if (!validModelForm(profile, listModels)) return;
+  if (!listModels && !validModelForm(profile)) return;
   const apiKey = $("ai-personal-key").value.trim();
   if (!apiKey) {
     modelSettingsStatus("请先填写 API Key。", true);
@@ -917,11 +919,7 @@ async function checkAIProfile(listModels) {
     });
     if (!current()) return;
     if (listModels && Array.isArray(response.models)) {
-      $("ai-model-list").replaceChildren(...response.models.map((model) => {
-        const option = el("option");
-        option.value = model;
-        return option;
-      }));
+      renderAIModelSuggestions(response.models);
       modelSettingsStatus(response.models.length
         ? "已获取 " + response.models.length + " 个模型，可在模型 ID 输入框中选择。"
         : "接口未返回可选模型，可手动填写模型 ID。");
@@ -954,7 +952,7 @@ async function sendAI(mode) {
           : "请先输入问题，再点击发送。",
       );
     }
-    if (mode === "chat" && asksToEditDraft(msg)) {
+    if (mode === "chat" && $("ai-source").value === "platform" && asksToEditDraft(msg)) {
       $("ai-generate").focus();
       throw Error("如需修改任务 JSON，请先点击“生成配置草案”开启蓝色模式，再点击发送。你的要求仍保留在输入框中。");
     }
