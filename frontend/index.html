@@ -260,7 +260,7 @@
                   </label>
                   <label class="check">
                     <input type="checkbox" id="ai-job-context" disabled>
-                    <span>附带选中任务</span>
+                    <span>附带选中任务与日志</span>
                   </label>
                   <button
                     id="context-info-toggle"
@@ -274,10 +274,10 @@
               </div>
               <div id="context-info" class="context-info" hidden>
                 <p>
-                  选中任务仅附带状态、最近日志、结果摘要及少量节点，不发送结果文件或图像。
+                  选择任务后默认附带配置、错误、最近日志和结果摘要。可取消勾选。
                 </p>
-                <p id="ai-job-status">尚未附带任务。</p>
               </div>
+              <p id="ai-job-status" class="small" role="status">尚未附带任务。</p>
             </div>
           </section>
           <section

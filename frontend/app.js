@@ -1009,10 +1009,15 @@ async function sendAI() {
             " · " +
             (T[r.job_receipt.status] || r.job_receipt.status) +
             " · 读取时间 " +
-            r.job_receipt.captured_at;
+            r.job_receipt.captured_at +
+            (r.job_receipt.log_available ? " · 已读取日志" : " · 暂无日志") +
+            (r.job_receipt.error_available ? " · 已读取错误" : "") +
+            (r.job_receipt.log_truncated ? " · 日志已截断，保留末尾" : "");
         }
       }
-      setAIActionStatus("");
+      setAIActionStatus(r.draft_validation_error
+        ? "JSON 草案尚未通过校验：" + r.draft_validation_error.message
+        : "", !!r.draft_validation_error);
       chat.push(pending, {
         role: "assistant", content: r.message, aiSource, providerLabel,
         ...(r.draft_spec ? { draftSpec: r.draft_spec } : {}),
@@ -1147,6 +1152,7 @@ function selectTaskView(id) {
   const attachment = $("ai-job-context");
   attachment.disabled = !aiJobContextEnabled || !id;
   if (changed) {
+    attachment.checked = !!id && aiJobContextEnabled;
     detail = null;
     imageTask = null;
     for (const url of images) URL.revokeObjectURL(url);
