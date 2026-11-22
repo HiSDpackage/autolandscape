@@ -69,7 +69,7 @@ async function call(path, method = "GET", data = null, extra = {}) {
   }
   const isAI = path === "/v1/ai/chat" || path === "/v1/ai/personal/chat";
   const aiSetup = path === "/v1/ai/personal/test" || path === "/v1/ai/personal/models";
-  const requestTimeoutMs = isAI ? 330000 : aiSetup ? 25000 : cfg.requestTimeoutMs;
+  const requestTimeoutMs = isAI ? 930000 : aiSetup ? 25000 : cfg.requestTimeoutMs;
   const session = epoch,
     c = new AbortController(),
     timeout = setTimeout(() => c.abort(), requestTimeoutMs);
@@ -104,7 +104,7 @@ async function call(path, method = "GET", data = null, extra = {}) {
     if (aiSetup && e.name === "AbortError") throw Error("请求服务商超时，请稍后再试。");
     if (isAI && e.name === "AbortError") {
       throw Error(
-        "AI响应等待超过5分30秒，网页已停止等待；服务可能仍在处理，本次额度状态尚不确定。请勿立即重复发送，也不要据此认为额度已退回。",
+        "AI响应等待超过15分30秒，网页已停止等待；服务可能仍在处理，本次额度状态尚不确定。请勿立即重复发送，也不要据此认为额度已退回。",
       );
     }
     throw e;
