@@ -1021,6 +1021,7 @@ async function sendAI() {
       chat.push(pending, {
         role: "assistant", content: r.message, aiSource, providerLabel,
         ...(r.draft_spec ? { draftSpec: r.draft_spec } : {}),
+        ...(r.draft_validation_error ? { draftValidationError: r.draft_validation_error } : {}),
         ...(personal && typeof r.ai_thinking === "string" ? { aiThinking: r.ai_thinking } : {})
       });
       saveSession();
@@ -1196,6 +1197,19 @@ function openAIModelDraft(spec) {
     notify(error.message, true);
   }
 }
+function replyDraft(message) {
+  if (message.draftValidationError) return null;
+  if (message.draftSpec) return message.draftSpec;
+  const candidates = [];
+  for (const block of message.content.matchAll(/^ {0,3}```json[ \t]*\r?\n([\s\S]*?)^ {0,3}```[ \t]*\r?$/gim)) {
+    try {
+      const spec = JSON.parse(block[1]);
+      if (spec?.spec_version && spec.project && spec.system && spec.objective && spec.solver && spec.resources)
+        candidates.push(spec);
+    } catch {}
+  }
+  return candidates.length === 1 ? candidates[0] : null;
+}
 function renderChat(pending = null, error = null) {
   $("chat-welcome").hidden = chat.length > 0 || !!pending;
   const log = $("chat-log");
@@ -1221,10 +1235,11 @@ function renderChat(pending = null, error = null) {
       const copy = el("button", "复制回答", "message-copy");
       copy.onclick = () => window.copyText(m.content, copy);
       row.append(copy);
-      if (m.draftSpec) {
+      const draft = replyDraft(m);
+      if (draft) {
         const create = el("button", "新建配置草案", "message-draft");
         create.type = "button";
-        create.onclick = () => openAIModelDraft(m.draftSpec);
+        create.onclick = () => openAIModelDraft(draft);
         row.append(create);
       }
     }
